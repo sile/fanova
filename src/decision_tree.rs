@@ -258,3 +258,18 @@ pub enum FitError {
     #[error("invalid array shapse")]
     InvalidShape(#[from] ndarray::ShapeError),
 }
+
+#[derive(Debug)]
+pub struct Mse;
+
+impl Criterion for Mse {
+    fn calculate(&self, target: &ArrayView1<f64>) -> f64 {
+        let n = target.len() as f64;
+        let m = target.mean().expect("never fails");
+        target.iter().map(|&y| (y - m).powi(2)).sum::<f64>() / n
+    }
+
+    fn kind(&self) -> TreeKind {
+        TreeKind::Regression
+    }
+}
