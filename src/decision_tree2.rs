@@ -1,0 +1,274 @@
+use crate::functions;
+use crate::table::Table;
+use ordered_float::OrderedFloat;
+
+pub trait Criterion {
+    fn calculate<T>(&self, target: T) -> f64
+    where
+        T: Iterator<Item = f64> + Clone;
+}
+
+#[derive(Debug)]
+pub struct Mse;
+
+impl Criterion for Mse {
+    fn calculate<T>(&self, target: T) -> f64
+    where
+        T: Iterator<Item = f64> + Clone,
+    {
+        let n = target.clone().count() as f64;
+        let m = functions::mean(target.clone());
+        target.map(|y| (y - m).powi(2)).sum::<f64>() / n
+    }
+}
+
+#[derive(Debug)]
+pub struct Tree {
+    root: Node,
+}
+
+impl Tree {
+    pub fn fit<'a>(mut table: Table<'a>, criterion: impl Criterion, classification: bool) -> Self {
+        let mut builder = NodeBuilder {
+            criterion,
+            classification,
+        };
+        let root = builder.build(&mut table);
+        Self { root }
+    }
+}
+
+#[derive(Debug)]
+pub struct Node {
+    label: f64,
+}
+
+impl Node {
+    fn new(label: f64) -> Self {
+        Self { label }
+    }
+}
+
+#[derive(Debug)]
+struct NodeBuilder<C> {
+    criterion: C,
+    classification: bool,
+}
+
+impl<C> NodeBuilder<C>
+where
+    C: Criterion,
+{
+    fn build(&mut self, table: &mut Table) -> Node {
+        if table.is_single_target() {
+            let label = table.target().nth(0).expect("never fails");
+            return Node::new(label);
+        }
+
+        let label = if self.classification {
+            functions::most_frequent(table.target())
+        } else {
+            functions::mean(table.target())
+        };
+
+        let mut node = Node::new(label);
+        let mut best: Option<BestSplitPoint> = None;
+        let impurity = self.criterion.calculate(table.target());
+
+        for column in 0..table.features().len() {
+            if table.features()[column].iter().any(|f| f.is_nan()) {
+                continue;
+            }
+
+            table.sort_rows_by_feature(column);
+            for (row, threshold) in table.thresholds(column) {}
+        }
+
+        node
+    }
+}
+
+#[derive(Debug)]
+struct BestSplitPoint {
+    information_gain: f64,
+    column: usize,
+    threshold: f64,
+}
+
+//         for col in 0..features.shape()[1] {
+//             let features = features.index_axis(Axis(1), col);
+//             for threshold in self.thresholds(&features) {
+//                 let (target_l, target_r) = features.iter().zip(target.iter()).fold(
+//                     (Vec::new(), Vec::new()),
+//                     |(mut l, mut r), (&x, &y)| {
+//                         if x <= threshold {
+//                             l.push(y);
+//                         } else {
+//                             r.push(y);
+//                         }
+//                         (l, r)
+//                     },
+//                 );
+//                 let impurity_l = self.criterion.calculate(&ArrayView1::from(&target_l));
+//                 let impurity_r = self.criterion.calculate(&ArrayView1::from(&target_r));
+//                 let n_l = target_l.len() as f64 / target.len() as f64;
+//                 let n_r = target_r.len() as f64 / target.len() as f64;
+
+//                 let information_gain = impurity - (n_l * impurity_l + n_r * impurity_r);
+//                 if best
+//                     .as_ref()
+//                     .map_or(true, |t: &Best| t.information_gain < information_gain)
+//                 {
+//                     best = Some(Best {
+//                         information_gain,
+//                         feature: col,
+//                         threshold,
+//                     });
+//                 }
+//             }
+//         }
+
+//         let best = best.expect("never fails");
+//         node.children =
+//             Some(self.build_children(features, target, best.feature, best.threshold)?);
+//         Ok(node)
+//     }
+
+//     fn build_children(
+//         &self,
+//         features: &ArrayView2<f64>,
+//         target: &ArrayView1<f64>,
+//         feature_index: usize,
+//         threshold: f64,
+//     ) -> Result<Children, FitError> {
+//         let features_l = self.filter_features(features, feature_index, |x| x <= threshold)?;
+//         let target_l = self.filter_target(target, features, feature_index, |x| x <= threshold)?;
+//         let left = self.build_node(&features_l.view(), &target_l.view())?;
+
+//         let features_r = self.filter_features(features, feature_index, |x| x > threshold)?;
+//         let target_r = self.filter_target(target, features, feature_index, |x| x > threshold)?;
+//         let right = self.build_node(&features_r.view(), &target_r.view())?;
+
+//         Ok(Children {
+//             feature_index,
+//             threshold,
+//             left: Box::new(left),
+//             right: Box::new(right),
+//         })
+//     }
+
+//     fn filter_features<F>(
+//         &self,
+//         xss: &ArrayView2<f64>,
+//         index: usize,
+//         f: F,
+//     ) -> Result<Array2<f64>, ndarray::ShapeError>
+//     where
+//         F: Fn(f64) -> bool,
+//     {
+//         let mut rows = 0;
+//         let mut storage = Vec::<f64>::new();
+//         for xs in xss.genrows() {
+//             if f(xs[index]) {
+//                 storage.extend(xs);
+//                 rows += 1;
+//             }
+//         }
+//         Array2::from_shape_vec((rows, xss.shape()[1]), storage)
+//     }
+
+//     fn filter_target<F>(
+//         &self,
+//         ys: &ArrayView1<f64>,
+//         xss: &ArrayView2<f64>,
+//         index: usize,
+//         f: F,
+//     ) -> Result<Array1<f64>, ndarray::ShapeError>
+//     where
+//         F: Fn(f64) -> bool,
+//     {
+//         let mut rows = 0;
+//         let mut storage = Vec::<f64>::new();
+//         for (&y, xs) in ys.iter().zip(xss.genrows()) {
+//             if f(xs[index]) {
+//                 storage.push(y);
+//                 rows += 1;
+//             }
+//         }
+//         Array1::from_shape_vec((rows,), storage)
+//     }
+
+//     fn thresholds(&self, xs: &ArrayView1<f64>) -> Vec<f64> {
+//         let values = std::collections::BTreeSet::from_iter(xs.iter().copied().map(OrderedFloat));
+//         values
+//             .iter()
+//             .zip(values.iter().skip(1))
+//             .map(|(a, b)| (a.0 + b.0) / 2.0)
+//             .collect()
+//     }
+// }
+
+// #[derive(Debug)]
+// pub struct Children {
+//     feature_index: usize,
+//     threshold: f64,
+//     left: Box<Node>,
+//     right: Box<Node>,
+// }
+
+// #[derive(Debug)]
+// pub struct Node {
+//     label: f64,
+//     children: Option<Children>,
+// }
+
+// impl Node {
+//     pub fn new(label: f64) -> Self {
+//         Self {
+//             label,
+//             children: None,
+//         }
+//     }
+
+//     fn predict(&self, xs: &ArrayView1<f64>) -> f64 {
+//         if let Some(children) = &self.children {
+//             if xs[children.feature_index] <= children.threshold {
+//                 children.left.predict(xs)
+//             } else {
+//                 children.right.predict(xs)
+//             }
+//         } else {
+//             self.label
+//         }
+//     }
+// }
+
+// fn is_single(target: &ArrayView1<f64>) -> bool {
+//     let x = target[0];
+//     target.iter().skip(1).all(|&y| x == y)
+// }
+
+// fn most_frequent_class(ys: &ArrayView1<f64>) -> f64 {
+//     let mut counter = std::collections::HashMap::<_, usize>::new();
+//     for y in ys {
+//         *counter.entry(OrderedFloat(*y)).or_default() += 1;
+//     }
+
+//     counter
+//         .iter()
+//         .max_by_key(|t| t.1)
+//         .expect("never fails")
+//         .0
+//          .0
+// }
+
+// #[derive(Debug)]
+// pub struct Tree {
+//     root: Node,
+// }
+
+// impl Tree {
+//     pub fn predict(&self, xs: &ArrayView1<f64>) -> f64 {
+//         self.root.predict(xs)
+//     }
+// }
