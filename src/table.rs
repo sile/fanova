@@ -41,7 +41,9 @@ impl<'a> Table<'a> {
     }
 
     pub fn is_single_target(&self) -> bool {
-        self.target.iter().skip(1).all(|&t| t == self.target[0])
+        let mut target = self.target();
+        let first = target.next().expect("never fails");
+        target.all(|t| t == first)
     }
 
     pub fn target<'b>(&'b self) -> impl 'b + Iterator<Item = f64> + Clone {
@@ -50,8 +52,14 @@ impl<'a> Table<'a> {
             .map(move |&i| self.target[i])
     }
 
-    pub fn features(&self) -> &[&'a [f64]] {
-        &self.features
+    pub fn features_len(&self) -> usize {
+        self.features.len()
+    }
+
+    pub fn feature<'b>(&'b self, column: usize) -> impl 'b + Iterator<Item = f64> + Clone {
+        self.row_indices[self.row_range.start..self.row_range.end]
+            .iter()
+            .map(move |&i| self.features[column][i])
     }
 
     pub fn sort_rows_by_feature(&mut self, column: usize) {
@@ -67,20 +75,25 @@ impl<'a> Table<'a> {
             .map(move |i| feature[indices[i]])
             .enumerate()
             .scan(None, |prev, (i, x)| {
-                if *prev != Some(x) {
+                if prev.is_none() {
+                    *prev = Some(x);
+                    Some(None)
+                } else if *prev != Some(x) {
                     let y = prev.expect("never fails");
                     *prev = Some(x);
-                    Some((i, (x + y) / 2.0))
+                    Some(Some((i, (x + y) / 2.0)))
                 } else {
-                    None
+                    Some(None)
                 }
             })
+            .filter_map(|t| t)
     }
 
     pub fn with_split<F, T>(&mut self, row: usize, mut f: F) -> (T, T)
     where
         F: FnMut(&mut Self) -> T,
     {
+        let row = row + self.row_range.start;
         let original = self.row_range.clone();
 
         self.row_range.end = row;

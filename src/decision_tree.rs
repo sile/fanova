@@ -1,6 +1,21 @@
 use crate::functions;
 use crate::table::Table;
-use ordered_float::OrderedFloat;
+
+#[derive(Debug)]
+pub struct DecisionTreeRegressor {
+    tree: Tree,
+}
+
+impl DecisionTreeRegressor {
+    pub fn fit<'a>(table: Table<'a>) -> Self {
+        let tree = Tree::fit(table, Mse, false);
+        Self { tree }
+    }
+
+    pub fn predict(&self, xs: &[f64]) -> f64 {
+        self.tree.predict(xs)
+    }
+}
 
 pub trait Criterion {
     fn calculate<T>(&self, target: T) -> f64
@@ -110,8 +125,8 @@ where
         let impurity = self.criterion.calculate(table.target());
         let rows = table.target().count();
 
-        for column in 0..table.features().len() {
-            if table.features()[column].iter().any(|f| f.is_nan()) {
+        for column in 0..table.features_len() {
+            if table.feature(column).any(|f| f.is_nan()) {
                 continue;
             }
 
@@ -143,10 +158,60 @@ where
 
     fn build_children(&mut self, table: &mut Table, split: SplitPoint) -> Children {
         table.sort_rows_by_feature(split.column);
-        let row = table.features()[split.column]
-            .binary_search_by_key(&OrderedFloat(split.threshold), |&f| OrderedFloat(f))
-            .unwrap_or_else(|i| i);
+        let row = table
+            .feature(split.column)
+            .take_while(|&f| f <= split.threshold)
+            .count();
         let (left, right) = table.with_split(row, |table| Box::new(self.build(table)));
         Children { split, left, right }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regression_works() -> Result<(), anyhow::Error> {
+        let features = vec![
+            &[
+                0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 1.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0,
+            ],
+            &[
+                2.0, 2.0, 2.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0,
+            ],
+            &[
+                1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0,
+            ],
+            &[
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+            ],
+        ];
+        let target = &[
+            25.0, 30.0, 46.0, 45.0, 52.0, 23.0, 43.0, 35.0, 38.0, 46.0, 48.0, 52.0, 44.0, 30.0,
+        ];
+        let train_len = target.len() - 2;
+
+        let table = Table::new(
+            features.iter().map(|f| &f[..train_len]).collect(),
+            &target[..train_len],
+        )?;
+
+        let regressor = DecisionTreeRegressor::fit(table);
+        assert_eq!(
+            regressor.predict(&features.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
+            46.0
+        );
+        assert_eq!(
+            regressor.predict(
+                &features
+                    .iter()
+                    .map(|f| f[train_len + 1])
+                    .collect::<Vec<_>>()
+            ),
+            52.0
+        );
+
+        Ok(())
     }
 }
