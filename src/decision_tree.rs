@@ -1,5 +1,12 @@
 use crate::functions;
 use crate::table::Table;
+use rand::seq::SliceRandom as _;
+use rand::Rng;
+
+#[derive(Debug, Clone, Default)]
+pub struct DecisionTreeOptions {
+    pub max_features: Option<usize>,
+}
 
 #[derive(Debug)]
 pub struct DecisionTreeRegressor {
@@ -7,8 +14,12 @@ pub struct DecisionTreeRegressor {
 }
 
 impl DecisionTreeRegressor {
-    pub fn fit<'a>(table: Table<'a>) -> Self {
-        let tree = Tree::fit(table, Mse, false);
+    pub fn fit<'a, R: Rng + ?Sized>(
+        rng: &mut R,
+        table: Table<'a>,
+        options: DecisionTreeOptions,
+    ) -> Self {
+        let tree = Tree::fit(rng, table, Mse, false, options);
         Self { tree }
     }
 
@@ -43,10 +54,18 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn fit<'a>(mut table: Table<'a>, criterion: impl Criterion, classification: bool) -> Self {
+    pub fn fit<'a, R: Rng + ?Sized>(
+        rng: &mut R,
+        mut table: Table<'a>,
+        criterion: impl Criterion,
+        classification: bool,
+        options: DecisionTreeOptions,
+    ) -> Self {
         let mut builder = NodeBuilder {
+            rng,
             criterion,
             classification,
+            options,
         };
         let root = builder.build(&mut table);
         Self { root }
@@ -99,13 +118,16 @@ struct SplitPoint {
 }
 
 #[derive(Debug)]
-struct NodeBuilder<C> {
+struct NodeBuilder<R, C> {
+    rng: R,
     criterion: C,
     classification: bool,
+    options: DecisionTreeOptions,
 }
 
-impl<C> NodeBuilder<C>
+impl<R, C> NodeBuilder<R, C>
 where
+    R: Rng,
     C: Criterion,
 {
     fn build(&mut self, table: &mut Table) -> Node {
@@ -121,15 +143,21 @@ where
         };
 
         let mut node = Node::new(label);
-        let mut best: Option<SplitPoint> = None;
         let impurity = self.criterion.calculate(table.target());
         let rows = table.target().count();
 
-        for column in 0..table.features_len() {
-            if table.feature(column).any(|f| f.is_nan()) {
-                continue;
-            }
+        let max_features = self
+            .options
+            .max_features
+            .unwrap_or_else(|| table.features_len());
+        let columns = (0..table.features_len())
+            .filter(|&i| !table.feature(i).any(|f| f.is_nan()))
+            .collect::<Vec<_>>();
 
+        let mut best: Option<SplitPoint> = None;
+        for &column in
+            columns.choose_multiple(&mut self.rng, std::cmp::min(columns.len(), max_features))
+        {
             table.sort_rows_by_feature(column);
             for (row, threshold) in table.thresholds(column) {
                 let impurity_l = self.criterion.calculate(table.target().take(row));
@@ -151,8 +179,9 @@ where
             }
         }
 
-        let best = best.expect("never fails");
-        node.children = Some(self.build_children(table, best));
+        if let Some(best) = best {
+            node.children = Some(self.build_children(table, best));
+        }
         node
     }
 
@@ -170,6 +199,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand;
 
     #[test]
     fn regression_works() -> Result<(), anyhow::Error> {
@@ -197,7 +227,8 @@ mod tests {
             &target[..train_len],
         )?;
 
-        let regressor = DecisionTreeRegressor::fit(table);
+        let regressor =
+            DecisionTreeRegressor::fit(&mut rand::thread_rng(), table, Default::default());
         assert_eq!(
             regressor.predict(&features.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
             46.0

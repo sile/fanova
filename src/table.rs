@@ -1,8 +1,9 @@
 use ordered_float::OrderedFloat;
+use rand::Rng;
 use std::ops::Range;
 use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Table<'a> {
     row_indices: Vec<usize>,
     row_range: Range<usize>,
@@ -38,6 +39,15 @@ impl<'a> Table<'a> {
             features,
             target,
         })
+    }
+
+    pub fn subsample<R: Rng + ?Sized>(&mut self, rng: &mut R, size: usize) {
+        let indices = (0..size)
+            .map(|_| self.row_indices[rng.gen_range(self.row_range.start, self.row_range.end)])
+            .collect::<Vec<_>>();
+        self.row_indices = indices;
+        self.row_range.start = 0;
+        self.row_range.end = size;
     }
 
     pub fn is_single_target(&self) -> bool {
