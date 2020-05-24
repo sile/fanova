@@ -76,6 +76,23 @@ impl<'a> Table<'a> {
                 }
             })
     }
+
+    pub fn with_split<F, T>(&mut self, row: usize, mut f: F) -> (T, T)
+    where
+        F: FnMut(&mut Self) -> T,
+    {
+        let original = self.row_range.clone();
+
+        self.row_range.end = row;
+        let left = f(self);
+        self.row_range.end = original.end;
+
+        self.row_range.start = row;
+        let right = f(self);
+        self.row_range.start = original.start;
+
+        (left, right)
+    }
 }
 
 #[derive(Debug, Error, Clone)]

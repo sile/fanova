@@ -1,182 +1,45 @@
-use ndarray::{Array1, Array2, ArrayView1, ArrayView2, Axis};
+use crate::functions;
+use crate::table::Table;
 use ordered_float::OrderedFloat;
-use std::iter::FromIterator as _;
-use thiserror::Error;
 
-#[derive(Debug)]
-pub struct TreeOptions<C> {
-    criterion: C,
+pub trait Criterion {
+    fn calculate<T>(&self, target: T) -> f64
+    where
+        T: Iterator<Item = f64> + Clone;
 }
 
-impl<C> TreeOptions<C>
-where
-    C: Criterion,
-{
-    pub fn new(criterion: C) -> Self {
-        Self { criterion }
+#[derive(Debug)]
+pub struct Mse;
+
+impl Criterion for Mse {
+    fn calculate<T>(&self, target: T) -> f64
+    where
+        T: Iterator<Item = f64> + Clone,
+    {
+        let n = target.clone().count() as f64;
+        let m = functions::mean(target.clone());
+        target.map(|y| (y - m).powi(2)).sum::<f64>() / n
     }
+}
 
-    pub fn fit(
-        &self,
-        features: &ArrayView2<f64>,
-        target: &ArrayView1<f64>,
-    ) -> Result<Tree, FitError> {
-        let node = self.build_node(features, target)?;
-        Ok(Tree { root: node })
-    }
+#[derive(Debug)]
+pub struct Tree {
+    root: Node,
+}
 
-    fn build_node(
-        &self,
-        features: &ArrayView2<f64>,
-        target: &ArrayView1<f64>,
-    ) -> Result<Node, FitError> {
-        if target.is_empty() {
-            return Err(FitError::EmptyTarget);
-        }
-
-        if features.shape()[0] != target.len() {
-            return Err(FitError::SampleSizeMismatched);
-        }
-
-        if is_single(target) {
-            return Ok(Node::new(target[0]));
-        }
-
-        let label = if self.criterion.kind() == TreeKind::Classification {
-            most_frequent_class(target)
-        } else {
-            target.mean().expect("never fails")
+impl Tree {
+    pub fn fit<'a>(mut table: Table<'a>, criterion: impl Criterion, classification: bool) -> Self {
+        let mut builder = NodeBuilder {
+            criterion,
+            classification,
         };
-
-        let mut node = Node::new(label);
-        let impurity = self.criterion.calculate(target);
-
-        let mut best = None;
-        struct Best {
-            information_gain: f64,
-            feature: usize,
-            threshold: f64,
-        }
-
-        for col in 0..features.shape()[1] {
-            let features = features.index_axis(Axis(1), col);
-            for threshold in self.thresholds(&features) {
-                let (target_l, target_r) = features.iter().zip(target.iter()).fold(
-                    (Vec::new(), Vec::new()),
-                    |(mut l, mut r), (&x, &y)| {
-                        if x <= threshold {
-                            l.push(y);
-                        } else {
-                            r.push(y);
-                        }
-                        (l, r)
-                    },
-                );
-                let impurity_l = self.criterion.calculate(&ArrayView1::from(&target_l));
-                let impurity_r = self.criterion.calculate(&ArrayView1::from(&target_r));
-                let n_l = target_l.len() as f64 / target.len() as f64;
-                let n_r = target_r.len() as f64 / target.len() as f64;
-
-                let information_gain = impurity - (n_l * impurity_l + n_r * impurity_r);
-                if best
-                    .as_ref()
-                    .map_or(true, |t: &Best| t.information_gain < information_gain)
-                {
-                    best = Some(Best {
-                        information_gain,
-                        feature: col,
-                        threshold,
-                    });
-                }
-            }
-        }
-
-        let best = best.expect("never fails");
-        node.children =
-            Some(self.build_children(features, target, best.feature, best.threshold)?);
-        Ok(node)
+        let root = builder.build(&mut table);
+        Self { root }
     }
 
-    fn build_children(
-        &self,
-        features: &ArrayView2<f64>,
-        target: &ArrayView1<f64>,
-        feature_index: usize,
-        threshold: f64,
-    ) -> Result<Children, FitError> {
-        let features_l = self.filter_features(features, feature_index, |x| x <= threshold)?;
-        let target_l = self.filter_target(target, features, feature_index, |x| x <= threshold)?;
-        let left = self.build_node(&features_l.view(), &target_l.view())?;
-
-        let features_r = self.filter_features(features, feature_index, |x| x > threshold)?;
-        let target_r = self.filter_target(target, features, feature_index, |x| x > threshold)?;
-        let right = self.build_node(&features_r.view(), &target_r.view())?;
-
-        Ok(Children {
-            feature_index,
-            threshold,
-            left: Box::new(left),
-            right: Box::new(right),
-        })
+    pub fn predict(&self, xs: &[f64]) -> f64 {
+        self.root.predict(xs)
     }
-
-    fn filter_features<F>(
-        &self,
-        xss: &ArrayView2<f64>,
-        index: usize,
-        f: F,
-    ) -> Result<Array2<f64>, ndarray::ShapeError>
-    where
-        F: Fn(f64) -> bool,
-    {
-        let mut rows = 0;
-        let mut storage = Vec::<f64>::new();
-        for xs in xss.genrows() {
-            if f(xs[index]) {
-                storage.extend(xs);
-                rows += 1;
-            }
-        }
-        Array2::from_shape_vec((rows, xss.shape()[1]), storage)
-    }
-
-    fn filter_target<F>(
-        &self,
-        ys: &ArrayView1<f64>,
-        xss: &ArrayView2<f64>,
-        index: usize,
-        f: F,
-    ) -> Result<Array1<f64>, ndarray::ShapeError>
-    where
-        F: Fn(f64) -> bool,
-    {
-        let mut rows = 0;
-        let mut storage = Vec::<f64>::new();
-        for (&y, xs) in ys.iter().zip(xss.genrows()) {
-            if f(xs[index]) {
-                storage.push(y);
-                rows += 1;
-            }
-        }
-        Array1::from_shape_vec((rows,), storage)
-    }
-
-    fn thresholds(&self, xs: &ArrayView1<f64>) -> Vec<f64> {
-        let values = std::collections::BTreeSet::from_iter(xs.iter().copied().map(OrderedFloat));
-        values
-            .iter()
-            .zip(values.iter().skip(1))
-            .map(|(a, b)| (a.0 + b.0) / 2.0)
-            .collect()
-    }
-}
-
-#[derive(Debug)]
-pub struct Children {
-    feature_index: usize,
-    threshold: f64,
-    left: Box<Node>,
-    right: Box<Node>,
 }
 
 #[derive(Debug)]
@@ -186,16 +49,16 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(label: f64) -> Self {
+    fn new(label: f64) -> Self {
         Self {
             label,
             children: None,
         }
     }
 
-    fn predict(&self, xs: &ArrayView1<f64>) -> f64 {
+    fn predict(&self, xs: &[f64]) -> f64 {
         if let Some(children) = &self.children {
-            if xs[children.feature_index] <= children.threshold {
+            if xs[children.split.column] <= children.split.threshold {
                 children.left.predict(xs)
             } else {
                 children.right.predict(xs)
@@ -206,70 +69,84 @@ impl Node {
     }
 }
 
-fn is_single(target: &ArrayView1<f64>) -> bool {
-    let x = target[0];
-    target.iter().skip(1).all(|&y| x == y)
-}
-
-fn most_frequent_class(ys: &ArrayView1<f64>) -> f64 {
-    let mut counter = std::collections::HashMap::<_, usize>::new();
-    for y in ys {
-        *counter.entry(OrderedFloat(*y)).or_default() += 1;
-    }
-
-    counter
-        .iter()
-        .max_by_key(|t| t.1)
-        .expect("never fails")
-        .0
-         .0
+#[derive(Debug)]
+pub struct Children {
+    split: SplitPoint,
+    left: Box<Node>,
+    right: Box<Node>,
 }
 
 #[derive(Debug)]
-pub struct Tree {
-    root: Node,
-}
-
-impl Tree {
-    pub fn predict(&self, xs: &ArrayView1<f64>) -> f64 {
-        self.root.predict(xs)
-    }
-}
-
-pub trait Criterion {
-    fn calculate(&self, target: &ArrayView1<f64>) -> f64;
-    fn kind(&self) -> TreeKind;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TreeKind {
-    Classification,
-    Regression,
-}
-
-#[derive(Debug, Error)]
-pub enum FitError {
-    #[error("target data is empty")]
-    EmptyTarget,
-
-    #[error("the sample counts of features and target are mismatched")]
-    SampleSizeMismatched,
-
-    #[error("invalid array shapse")]
-    InvalidShape(#[from] ndarray::ShapeError),
+struct SplitPoint {
+    information_gain: f64,
+    column: usize,
+    threshold: f64,
 }
 
 #[derive(Debug)]
-pub struct Mse;
+struct NodeBuilder<C> {
+    criterion: C,
+    classification: bool,
+}
 
-impl Criterion for Mse {
-    fn calculate(&self, target: &ArrayView1<f64>) -> f64 {
-        let n = target.len() as f64;
-        let m = target.mean().expect("never fails");
-        target.iter().map(|&y| (y - m).powi(2)).sum::<f64>() / n
+impl<C> NodeBuilder<C>
+where
+    C: Criterion,
+{
+    fn build(&mut self, table: &mut Table) -> Node {
+        if table.is_single_target() {
+            let label = table.target().nth(0).expect("never fails");
+            return Node::new(label);
+        }
+
+        let label = if self.classification {
+            functions::most_frequent(table.target())
+        } else {
+            functions::mean(table.target())
+        };
+
+        let mut node = Node::new(label);
+        let mut best: Option<SplitPoint> = None;
+        let impurity = self.criterion.calculate(table.target());
+        let rows = table.target().count();
+
+        for column in 0..table.features().len() {
+            if table.features()[column].iter().any(|f| f.is_nan()) {
+                continue;
+            }
+
+            table.sort_rows_by_feature(column);
+            for (row, threshold) in table.thresholds(column) {
+                let impurity_l = self.criterion.calculate(table.target().take(row));
+                let impurity_r = self.criterion.calculate(table.target().skip(row));
+                let n_l = row as f64 / rows as f64;
+                let n_r = 1.0 - n_l;
+
+                let information_gain = impurity - (n_l * impurity_l + n_r * impurity_r);
+                if best
+                    .as_ref()
+                    .map_or(true, |t| t.information_gain < information_gain)
+                {
+                    best = Some(SplitPoint {
+                        information_gain,
+                        column,
+                        threshold,
+                    });
+                }
+            }
+        }
+
+        let best = best.expect("never fails");
+        node.children = Some(self.build_children(table, best));
+        node
     }
 
-    fn kind(&self) -> TreeKind {
-        TreeKind::Regression
+    fn build_children(&mut self, table: &mut Table, split: SplitPoint) -> Children {
+        table.sort_rows_by_feature(split.column);
+        let row = table.features()[split.column]
+            .binary_search_by_key(&OrderedFloat(split.threshold), |&f| OrderedFloat(f))
+            .unwrap_or_else(|i| i);
+        let (left, right) = table.with_split(row, |table| Box::new(self.build(table)));
+        Children { split, left, right }
     }
 }
