@@ -66,6 +66,10 @@ impl<'a> Table<'a> {
         self.features.len()
     }
 
+    pub fn rows_len(&self) -> usize {
+        self.row_range.end - self.row_range.start
+    }
+
     pub fn feature<'b>(&'b self, column: usize) -> impl 'b + Iterator<Item = f64> + Clone {
         self.row_indices[self.row_range.start..self.row_range.end]
             .iter()
