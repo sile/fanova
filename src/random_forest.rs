@@ -38,6 +38,10 @@ impl RandomForestRegressor {
         Self { forest }
     }
 
+    pub fn forest(&self) -> &[DecisionTreeRegressor] {
+        &self.forest
+    }
+
     pub fn predict(&self, xs: &[f64]) -> f64 {
         functions::mean(self.forest.iter().map(|tree| tree.predict(xs)))
     }

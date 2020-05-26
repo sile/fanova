@@ -26,6 +26,31 @@ impl DecisionTreeRegressor {
     pub fn predict(&self, xs: &[f64]) -> f64 {
         self.tree.predict(xs)
     }
+
+    // TODO: rename
+    pub fn fold<F, LeafF, T, LeafT>(
+        &self,
+        init: T,
+        mut leaf_init: LeafT,
+        mut f: F,
+        mut leaf_f: LeafF,
+    ) -> LeafT
+    where
+        F: FnMut(T, &SplitPoint) -> (T, T),
+        LeafF: FnMut(LeafT, T, f64) -> LeafT,
+    {
+        let mut stack = vec![(&self.tree.root, init)];
+        while let Some((node, acc)) = stack.pop() {
+            if let Some(c) = &node.children {
+                let (acc_l, acc_r) = f(acc, &c.split);
+                stack.push((&c.left, acc_l));
+                stack.push((&c.right, acc_r));
+            } else {
+                leaf_init = leaf_f(leaf_init, acc, node.label);
+            }
+        }
+        leaf_init
+    }
 }
 
 pub trait Criterion {
@@ -111,10 +136,10 @@ pub struct Children {
 }
 
 #[derive(Debug)]
-struct SplitPoint {
-    information_gain: f64,
-    column: usize,
-    threshold: f64,
+pub struct SplitPoint {
+    pub information_gain: f64,
+    pub column: usize,
+    pub threshold: f64,
 }
 
 #[derive(Debug)]
