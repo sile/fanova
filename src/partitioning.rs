@@ -80,6 +80,7 @@ impl TreePartitioning {
 #[derive(Debug)]
 pub struct ForestPartitioning {
     forest: Vec<TreePartitioning>,
+    config_space: Vec<Range<f64>>,
 }
 
 impl ForestPartitioning {
@@ -90,7 +91,26 @@ impl ForestPartitioning {
                 .iter()
                 .map(|tree| TreePartitioning::new(tree, config_space.clone()))
                 .collect(),
+            config_space,
         }
+    }
+
+    pub fn mean(&self) -> f64 {
+        self.partitions()
+            .map(|p| {
+                let v = p
+                    .config_space
+                    .iter()
+                    .zip(self.config_space.iter())
+                    .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
+                    .product::<f64>();
+                v * p.label
+            })
+            .sum()
+    }
+
+    fn partitions(&self) -> impl Iterator<Item = &Partition> {
+        self.forest.iter().flat_map(|t| t.partitions.iter())
     }
 
     pub fn marginal_predict(&self, partial_config: &[(usize, f64)]) -> f64 {
