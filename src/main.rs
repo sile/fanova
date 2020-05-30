@@ -1,20 +1,49 @@
-//use fanova::dataframe::{DataFrame, Series};
-//use std::fs::File;
-use std::path::PathBuf;
+use anyhow::ensure;
+use fanova::table::Table;
+use serde::Deserialize;
+use std::ops::Range;
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-struct Opt {
-    x_training_set: PathBuf,
-    y_training_set: PathBuf,
-    y_test_set: PathBuf,
+#[derive(Debug, Deserialize)]
+struct Column {
+    name: String,
+    low: f64,
+    high: f64,
+    data: Vec<f64>,
 }
 
+#[derive(Debug, StructOpt)]
+struct Opt {}
+
 fn main() -> anyhow::Result<()> {
-    // let opt = Opt::from_args();
-    // let x_training_set: DataFrame = serde_json::from_reader(File::open(opt.x_training_set)?)?;
-    // let y_training_set: Series = serde_json::from_reader(File::open(opt.y_training_set)?)?;
-    // let y_test_set: Series = serde_json::from_reader(File::open(opt.y_test_set)?)?;
-    // println!("{:?}", y_test_set);
+    let _opt = Opt::from_args();
+    let columns: Vec<Column> = serde_json::from_reader(std::io::stdin().lock())?;
+    ensure!(columns.len() > 2, "too few columns");
+
+    let features = columns
+        .iter()
+        .take(columns.len() - 1)
+        .map(|c| c.data.as_slice())
+        .collect();
+    let target = &columns[columns.len() - 1].data;
+    let table = Table::new(features, target)?;
+
+    let config_space = columns
+        .iter()
+        .take(columns.len() - 1)
+        .map(|c| Range {
+            start: c.low,
+            end: c.high,
+        })
+        .collect();
+    let importances = fanova::importance::quantify_importance(config_space, table);
+
+    let result = columns
+        .iter()
+        .zip(importances.iter())
+        .map(|(c, v)| (&c.name, v))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    serde_json::to_writer_pretty(std::io::stdout().lock(), &result)?;
+
     Ok(())
 }

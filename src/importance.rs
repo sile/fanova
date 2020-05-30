@@ -21,7 +21,9 @@ pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f
             .sum::<f64>();
         importances.push(variance / (u.end - u.start) / total_variance);
     }
-    importances
+
+    let sum = importances.iter().map(|&v| v).sum::<f64>();
+    importances.iter().map(|&v| v / sum).collect()
 }
 
 fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> impl Iterator<Item = Range<f64>> {
