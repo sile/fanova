@@ -12,6 +12,10 @@ impl Partition {
     fn contains(&self, xs: &[(usize, f64)]) -> bool {
         xs.iter().all(|&(i, v)| self.config_space[i].contains(&v))
     }
+
+    fn contains2(&self, i: usize, space: &Range<f64>) -> bool {
+        self.config_space[i].start <= space.start && space.end <= self.config_space[i].end
+    }
 }
 
 fn compute_partitions(
@@ -52,6 +56,7 @@ impl TreePartitioning {
         }
     }
 
+    // TODO: delete
     pub fn marginal_predict(&self, partial_config: &[(usize, f64)]) -> f64 {
         let total_size = self
             .config_space
@@ -69,6 +74,30 @@ impl TreePartitioning {
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| partial_config.iter().find(|(j, _)| i == j).is_none())
+                    .map(|(_, s)| s.end - s.start)
+                    .sum::<f64>();
+                (size / total_size) * p.label
+            })
+            .sum()
+    }
+
+    pub fn marginal_predict2(&self, column: usize, space: &Range<f64>) -> f64 {
+        let total_size = self
+            .config_space
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != column)
+            .map(|(_, s)| s.end - s.start)
+            .sum::<f64>();
+        self.partitions
+            .iter()
+            .filter(|p| p.contains2(column, space))
+            .map(|p| {
+                let size = p
+                    .config_space
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != column)
                     .map(|(_, s)| s.end - s.start)
                     .sum::<f64>();
                 (size / total_size) * p.label
@@ -109,7 +138,22 @@ impl ForestPartitioning {
             .sum()
     }
 
-    fn partitions(&self) -> impl Iterator<Item = &Partition> {
+    pub fn variance(&self) -> f64 {
+        let m = self.mean();
+        self.partitions()
+            .map(|p| {
+                let v = p
+                    .config_space
+                    .iter()
+                    .zip(self.config_space.iter())
+                    .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
+                    .product::<f64>();
+                v * (p.label - m).powi(2)
+            })
+            .sum()
+    }
+
+    pub fn partitions(&self) -> impl Iterator<Item = &Partition> {
         self.forest.iter().flat_map(|t| t.partitions.iter())
     }
 
@@ -119,6 +163,13 @@ impl ForestPartitioning {
             .iter()
             .map(|t| t.marginal_predict(partial_config))
             .sum::<f64>();
-        sum / self.forest.len() as f64
+        sum / self.forest.len() as f64 // TODO(?): remove
+    }
+
+    pub fn marginal_predict2(&self, column: usize, space: &Range<f64>) -> f64 {
+        self.forest
+            .iter()
+            .map(|t| t.marginal_predict2(column, space))
+            .sum()
     }
 }
