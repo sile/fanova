@@ -9,7 +9,6 @@ use std::ops::Range;
 pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f64> {
     let mut importances = vec![0.0; table.features_len()];
     let regressor = RandomForestRegressor::fit(&mut rand::thread_rng(), table, Default::default());
-
     for tree in regressor.forest().iter() {
         let partitioning = TreePartitioning::new(tree, config_space.clone());
         let mean = partitioning.mean(); // TODO: optimize

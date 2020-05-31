@@ -12,8 +12,8 @@ pub struct RandomForestOptions {
 impl Default for RandomForestOptions {
     fn default() -> Self {
         Self {
-            // trees: NonZeroUsize::new(20).unwrap(),
-            trees: NonZeroUsize::new(1).unwrap(),
+            trees: NonZeroUsize::new(100).unwrap(),
+            //trees: NonZeroUsize::new(1).unwrap(),
         }
     }
 }
@@ -30,8 +30,8 @@ impl RandomForestRegressor {
                 let mut table = table.clone();
                 table.subsample(rng, table.rows_len());
                 let options = DecisionTreeOptions {
-                    // max_features: Some(std::cmp::max(1, table.features_len() / 3)),
-                    max_features: Some(std::cmp::max(10, table.features_len() / 3)),
+                    max_features: Some(std::cmp::max(1, table.features_len() / 3)),
+                    //max_features: Some(std::cmp::max(10, table.features_len() / 3)),
                 };
                 let tree = DecisionTreeRegressor::fit(rng, table, options);
                 tree

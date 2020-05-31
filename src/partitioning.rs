@@ -88,7 +88,7 @@ impl TreePartitioning {
             .enumerate()
             .filter(|(i, _)| *i != column)
             .map(|(_, s)| s.end - s.start)
-            .sum::<f64>();
+            .product::<f64>();
         self.partitions
             .iter()
             .filter(|p| p.contains2(column, space))
@@ -99,7 +99,7 @@ impl TreePartitioning {
                     .enumerate()
                     .filter(|(i, _)| *i != column)
                     .map(|(_, s)| s.end - s.start)
-                    .sum::<f64>();
+                    .product::<f64>();
                 (size / total_size) * p.label
             })
             .sum()
