@@ -7,13 +7,19 @@ use structopt::StructOpt;
 #[derive(Debug, Deserialize)]
 struct Column {
     name: String,
+    // TODO: type: categorical|numerical
+    // TODO: distribution: uniform | log-uniform
     low: f64,
     high: f64,
     data: Vec<f64>,
 }
 
 #[derive(Debug, StructOpt)]
-struct Opt {}
+struct Opt {
+    // TODO: target_clip{low,high}
+// TODO: categorical_encoding
+// TODO: target_column
+}
 
 fn main() -> anyhow::Result<()> {
     let _opt = Opt::from_args();
