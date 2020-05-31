@@ -1,5 +1,5 @@
 use crate::decision_tree::DecisionTreeRegressor;
-use crate::random_forest::RandomForestRegressor;
+//use crate::random_forest::RandomForestRegressor;
 use std::ops::Range;
 
 #[derive(Debug)]
@@ -104,25 +104,6 @@ impl TreePartitioning {
             })
             .sum()
     }
-}
-
-#[derive(Debug)]
-pub struct ForestPartitioning {
-    forest: Vec<TreePartitioning>,
-    config_space: Vec<Range<f64>>,
-}
-
-impl ForestPartitioning {
-    pub fn new(regressor: &RandomForestRegressor, config_space: Vec<Range<f64>>) -> Self {
-        Self {
-            forest: regressor
-                .forest()
-                .iter()
-                .map(|tree| TreePartitioning::new(tree, config_space.clone()))
-                .collect(),
-            config_space,
-        }
-    }
 
     pub fn mean(&self) -> f64 {
         self.partitions()
@@ -154,22 +135,74 @@ impl ForestPartitioning {
     }
 
     pub fn partitions(&self) -> impl Iterator<Item = &Partition> {
-        self.forest.iter().flat_map(|t| t.partitions.iter())
-    }
-
-    pub fn marginal_predict(&self, partial_config: &[(usize, f64)]) -> f64 {
-        let sum = self
-            .forest
-            .iter()
-            .map(|t| t.marginal_predict(partial_config))
-            .sum::<f64>();
-        sum / self.forest.len() as f64 // TODO(?): remove
-    }
-
-    pub fn marginal_predict2(&self, column: usize, space: &Range<f64>) -> f64 {
-        self.forest
-            .iter()
-            .map(|t| t.marginal_predict2(column, space))
-            .sum()
+        self.partitions.iter()
     }
 }
+
+// #[derive(Debug)]
+// pub struct ForestPartitioning {
+//     forest: Vec<TreePartitioning>,
+//     config_space: Vec<Range<f64>>,
+// }
+
+// impl ForestPartitioning {
+//     pub fn new(regressor: &RandomForestRegressor, config_space: Vec<Range<f64>>) -> Self {
+//         Self {
+//             forest: regressor
+//                 .forest()
+//                 .iter()
+//                 .map(|tree| TreePartitioning::new(tree, config_space.clone()))
+//                 .collect(),
+//             config_space,
+//         }
+//     }
+
+//     pub fn mean(&self) -> f64 {
+//         self.partitions()
+//             .map(|p| {
+//                 let v = p
+//                     .config_space
+//                     .iter()
+//                     .zip(self.config_space.iter())
+//                     .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
+//                     .product::<f64>();
+//                 v * p.label
+//             })
+//             .sum()
+//     }
+
+//     pub fn variance(&self) -> f64 {
+//         let m = self.mean();
+//         self.partitions()
+//             .map(|p| {
+//                 let v = p
+//                     .config_space
+//                     .iter()
+//                     .zip(self.config_space.iter())
+//                     .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
+//                     .product::<f64>();
+//                 v * (p.label - m).powi(2)
+//             })
+//             .sum()
+//     }
+
+//     pub fn partitions(&self) -> impl Iterator<Item = &Partition> {
+//         self.forest.iter().flat_map(|t| t.partitions.iter())
+//     }
+
+//     pub fn marginal_predict(&self, partial_config: &[(usize, f64)]) -> f64 {
+//         let sum = self
+//             .forest
+//             .iter()
+//             .map(|t| t.marginal_predict(partial_config))
+//             .sum::<f64>();
+//         sum / self.forest.len() as f64 // TODO(?): remove
+//     }
+
+//     pub fn marginal_predict2(&self, column: usize, space: &Range<f64>) -> f64 {
+//         self.forest
+//             .iter()
+//             .map(|t| t.marginal_predict2(column, space))
+//             .sum()
+//     }
+// }

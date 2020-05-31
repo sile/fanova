@@ -1,4 +1,4 @@
-use crate::partitioning::ForestPartitioning;
+use crate::partitioning::TreePartitioning;
 use crate::random_forest::RandomForestRegressor;
 use crate::table::Table;
 use ordered_float::OrderedFloat;
@@ -7,21 +7,29 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f64> {
+    let mut importances = vec![0.0; table.features_len()];
     let regressor = RandomForestRegressor::fit(&mut rand::thread_rng(), table, Default::default());
-    let partitioning = ForestPartitioning::new(&regressor, config_space.clone());
-    let total_variance = partitioning.variance();
-    let mut importances = Vec::new();
-    for (i, u) in config_space.iter().enumerate() {
-        let subspaces = subspaces(partitioning.partitions().map(|p| p.config_space[i].clone()));
-        let variance = subspaces
-            .map(|s| {
-                let v = partitioning.marginal_predict2(i, &s);
-                v.powi(2) * (s.end - s.start)
-            })
-            .sum::<f64>();
-        importances.push(variance / (u.end - u.start) / total_variance);
+
+    for tree in regressor.forest().iter() {
+        let partitioning = TreePartitioning::new(tree, config_space.clone());
+        let mean = partitioning.mean(); // TODO: optimize
+        let total_variance = partitioning.variance();
+        for (i, u) in config_space.iter().enumerate() {
+            let subspaces = subspaces(partitioning.partitions().map(|p| p.config_space[i].clone()));
+            let variance = subspaces
+                .map(|s| {
+                    let v = partitioning.marginal_predict2(i, &s);
+                    (v - mean).powi(2) * (s.end - s.start)
+                })
+                .sum::<f64>();
+            let v = variance / (u.end - u.start) / total_variance; // TODO: Also save standard deviation.
+            importances[i] += v;
+        }
     }
 
+    importances
+        .iter_mut()
+        .for_each(|v| *v /= regressor.forest().len() as f64);
     let sum = importances.iter().map(|&v| v).sum::<f64>();
     importances.iter().map(|&v| v / sum).collect()
 }
