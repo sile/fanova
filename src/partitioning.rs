@@ -6,14 +6,14 @@ use std::ops::Range;
 pub struct Partition {
     pub label: f64,
     pub config_space: Vec<Range<f64>>,
+    valid_columns: Vec<usize>,
 }
 
 impl Partition {
-    fn contains(&self, xs: &[(usize, f64)]) -> bool {
-        xs.iter().all(|&(i, v)| self.config_space[i].contains(&v))
-    }
-
     fn contains2(&self, i: usize, space: &Range<f64>) -> bool {
+        if !self.valid_columns.contains(&i) {
+            return false;
+        }
         self.config_space[i].start <= space.start && space.end <= self.config_space[i].end
     }
 }
@@ -32,10 +32,11 @@ fn compute_partitions(
             cs_r[split.column].start = split.threshold;
             (cs_l, cs_r)
         },
-        |mut acc, config_space, label| {
+        |mut acc, config_space, label, valid_columns| {
             acc.push(Partition {
                 label,
                 config_space,
+                valid_columns,
             });
             acc
         },
@@ -56,51 +57,38 @@ impl TreePartitioning {
         }
     }
 
-    // TODO: delete
-    pub fn marginal_predict(&self, partial_config: &[(usize, f64)]) -> f64 {
-        let total_size = self
-            .config_space
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| partial_config.iter().find(|(j, _)| i == j).is_none())
-            .map(|(_, s)| s.end - s.start)
-            .sum::<f64>();
-        self.partitions
-            .iter()
-            .filter(|p| p.contains(partial_config))
-            .map(|p| {
-                let size = p
-                    .config_space
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| partial_config.iter().find(|(j, _)| i == j).is_none())
-                    .map(|(_, s)| s.end - s.start)
-                    .sum::<f64>();
-                (size / total_size) * p.label
-            })
-            .sum()
-    }
-
     pub fn marginal_predict2(&self, column: usize, space: &Range<f64>) -> f64 {
-        let total_size = self
-            .config_space
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i != column)
-            .map(|(_, s)| s.end - s.start)
-            .product::<f64>();
+        // let total_size = self
+        //     .config_space
+        //     .iter()
+        //     .enumerate()
+        //     .filter(|(i, _)| *i != column) // TODO(?): filter other invalid columns
+        //     .map(|(_, s)| s.end - s.start)
+        //     .product::<f64>();
         self.partitions
             .iter()
             .filter(|p| p.contains2(column, space))
             .map(|p| {
-                let size = p
-                    .config_space
+                // let size = p
+                //     .config_space
+                //     .iter()
+                //     .enumerate() // TODO(?): filter other invalid columns
+                //     .filter(|(i, _)| *i != column)
+                //     .filter(|(i, _)| p.valid_columns.contains(i))
+                //     .map(|(_, s)| s.end - s.start)
+                //     .product::<f64>();
+                let v = p
+                    .valid_columns
                     .iter()
-                    .enumerate()
-                    .filter(|(i, _)| *i != column)
-                    .map(|(_, s)| s.end - s.start)
+                    .filter(|&i| *i != column)
+                    .map(|&i| {
+                        let cs0 = &p.config_space[i];
+                        let cs1 = &self.config_space[i];
+                        (cs0.end - cs0.start) / (cs1.end - cs1.start)
+                    })
                     .product::<f64>();
-                (size / total_size) * p.label
+
+                v * p.label
             })
             .sum()
     }
@@ -109,10 +97,13 @@ impl TreePartitioning {
         self.partitions()
             .map(|p| {
                 let v = p
-                    .config_space
+                    .valid_columns
                     .iter()
-                    .zip(self.config_space.iter())
-                    .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
+                    .map(|&i| {
+                        let cs0 = &p.config_space[i];
+                        let cs1 = &self.config_space[i];
+                        (cs0.end - cs0.start) / (cs1.end - cs1.start)
+                    })
                     .product::<f64>();
                 v * p.label
             })
@@ -124,10 +115,13 @@ impl TreePartitioning {
         self.partitions()
             .map(|p| {
                 let v = p
-                    .config_space
+                    .valid_columns
                     .iter()
-                    .zip(self.config_space.iter())
-                    .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
+                    .map(|&i| {
+                        let cs0 = &p.config_space[i];
+                        let cs1 = &self.config_space[i];
+                        (cs0.end - cs0.start) / (cs1.end - cs1.start)
+                    })
                     .product::<f64>();
                 v * (p.label - m).powi(2)
             })
@@ -138,71 +132,3 @@ impl TreePartitioning {
         self.partitions.iter()
     }
 }
-
-// #[derive(Debug)]
-// pub struct ForestPartitioning {
-//     forest: Vec<TreePartitioning>,
-//     config_space: Vec<Range<f64>>,
-// }
-
-// impl ForestPartitioning {
-//     pub fn new(regressor: &RandomForestRegressor, config_space: Vec<Range<f64>>) -> Self {
-//         Self {
-//             forest: regressor
-//                 .forest()
-//                 .iter()
-//                 .map(|tree| TreePartitioning::new(tree, config_space.clone()))
-//                 .collect(),
-//             config_space,
-//         }
-//     }
-
-//     pub fn mean(&self) -> f64 {
-//         self.partitions()
-//             .map(|p| {
-//                 let v = p
-//                     .config_space
-//                     .iter()
-//                     .zip(self.config_space.iter())
-//                     .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
-//                     .product::<f64>();
-//                 v * p.label
-//             })
-//             .sum()
-//     }
-
-//     pub fn variance(&self) -> f64 {
-//         let m = self.mean();
-//         self.partitions()
-//             .map(|p| {
-//                 let v = p
-//                     .config_space
-//                     .iter()
-//                     .zip(self.config_space.iter())
-//                     .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
-//                     .product::<f64>();
-//                 v * (p.label - m).powi(2)
-//             })
-//             .sum()
-//     }
-
-//     pub fn partitions(&self) -> impl Iterator<Item = &Partition> {
-//         self.forest.iter().flat_map(|t| t.partitions.iter())
-//     }
-
-//     pub fn marginal_predict(&self, partial_config: &[(usize, f64)]) -> f64 {
-//         let sum = self
-//             .forest
-//             .iter()
-//             .map(|t| t.marginal_predict(partial_config))
-//             .sum::<f64>();
-//         sum / self.forest.len() as f64 // TODO(?): remove
-//     }
-
-//     pub fn marginal_predict2(&self, column: usize, space: &Range<f64>) -> f64 {
-//         self.forest
-//             .iter()
-//             .map(|t| t.marginal_predict2(column, space))
-//             .sum()
-//     }
-// }

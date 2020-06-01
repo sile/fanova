@@ -37,7 +37,7 @@ impl DecisionTreeRegressor {
     ) -> LeafT
     where
         F: FnMut(T, &SplitPoint) -> (T, T),
-        LeafF: FnMut(LeafT, T, f64) -> LeafT,
+        LeafF: FnMut(LeafT, T, f64, Vec<usize>) -> LeafT,
     {
         let mut stack = vec![(&self.tree.root, init)];
         while let Some((node, acc)) = stack.pop() {
@@ -46,7 +46,7 @@ impl DecisionTreeRegressor {
                 stack.push((&c.left, acc_l));
                 stack.push((&c.right, acc_r));
             } else {
-                leaf_init = leaf_f(leaf_init, acc, node.label);
+                leaf_init = leaf_f(leaf_init, acc, node.label, node.valid_columns.clone());
             }
         }
         leaf_init
@@ -104,13 +104,17 @@ impl Tree {
 #[derive(Debug)]
 pub struct Node {
     label: f64,
+    valid_columns: Vec<usize>,
     children: Option<Children>,
 }
 
 impl Node {
-    fn new(label: f64) -> Self {
+    fn new(label: f64, table: &Table) -> Self {
         Self {
             label,
+            valid_columns: (0..table.features_len())
+                .filter(|&i| !table.feature(i).any(|v| v.is_nan()))
+                .collect(),
             children: None,
         }
     }
@@ -158,7 +162,7 @@ where
     fn build(&mut self, table: &mut Table) -> Node {
         if table.is_single_target() {
             let label = table.target().nth(0).expect("never fails");
-            return Node::new(label);
+            return Node::new(label, table);
         }
 
         let label = if self.classification {
@@ -167,7 +171,7 @@ where
             functions::mean(table.target())
         };
 
-        let mut node = Node::new(label);
+        let mut node = Node::new(label, table);
         let impurity = self.criterion.calculate(table.target());
         let rows = table.target().count();
 
