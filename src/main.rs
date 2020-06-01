@@ -11,6 +11,7 @@ struct Column {
     // TODO: distribution: uniform | log-uniform
     low: f64,
     high: f64,
+    #[serde(with = "nullable_f64_vec")]
     data: Vec<f64>,
 }
 
@@ -52,4 +53,31 @@ fn main() -> anyhow::Result<()> {
     serde_json::to_writer_pretty(std::io::stdout().lock(), &result)?;
 
     Ok(())
+}
+
+mod nullable_f64_vec {
+    // use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer};
+    use std::f64::NAN;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<f64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v: Vec<Option<f64>> = Deserialize::deserialize(deserializer)?;
+        Ok(v.into_iter()
+            .map(|v| if let Some(v) = v { v } else { NAN })
+            .collect())
+    }
+
+    // pub fn serialize<S>(v: &[f64], serializer: S) -> Result<S::Ok, S::Error>
+    // where
+    //     S: Serializer,
+    // {
+    //     let v = v
+    //         .iter()
+    //         .map(|v| if v.is_finite() { Some(*v) } else { None })
+    //         .collect::<Vec<_>>();
+    //     v.serialize(serializer)
+    // }
 }
