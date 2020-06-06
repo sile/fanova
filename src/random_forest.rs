@@ -2,6 +2,7 @@ use crate::decision_tree::{DecisionTreeOptions, DecisionTreeRegressor};
 use crate::functions;
 use crate::table::Table;
 use rand::Rng;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone)]
@@ -13,7 +14,7 @@ pub struct RandomForestOptions {
 impl Default for RandomForestOptions {
     fn default() -> Self {
         Self {
-            trees: NonZeroUsize::new(100).unwrap(),
+            trees: NonZeroUsize::new(100).expect("never fails"),
             max_features: None,
         }
     }
@@ -26,19 +27,38 @@ pub struct RandomForestRegressor {
 
 impl RandomForestRegressor {
     pub fn fit<R: Rng + ?Sized>(rng: &mut R, table: Table, options: RandomForestOptions) -> Self {
+        let max_features = Self::decide_max_features(&table, &options);
         let forest = (0..options.trees.get())
-            .map(|_| {
-                let max_features = options
-                    .max_features
-                    .unwrap_or_else(|| (table.features_len() as f64 / 3.0).ceil() as usize);
-                let table = table.bootstrap_sample(rng);
-                let options = DecisionTreeOptions {
-                    max_features: Some(max_features),
-                };
-                DecisionTreeRegressor::fit(rng, table, options)
-            })
+            .map(|_| Self::tree_fit(rng, &table, max_features))
             .collect::<Vec<_>>();
         Self { forest }
+    }
+
+    pub fn fit_parallel(table: Table, options: RandomForestOptions) -> Self {
+        let max_features = Self::decide_max_features(&table, &options);
+        let forest = (0..options.trees.get())
+            .into_par_iter()
+            .map(|_| Self::tree_fit(&mut rand::thread_rng(), &table, max_features))
+            .collect::<Vec<_>>();
+        Self { forest }
+    }
+
+    fn decide_max_features(table: &Table, options: &RandomForestOptions) -> usize {
+        options
+            .max_features
+            .unwrap_or_else(|| (table.features_len() as f64 / 3.0).ceil() as usize)
+    }
+
+    fn tree_fit<R: Rng + ?Sized>(
+        rng: &mut R,
+        table: &Table,
+        max_features: usize,
+    ) -> DecisionTreeRegressor {
+        let table = table.bootstrap_sample(rng);
+        let tree_options = DecisionTreeOptions {
+            max_features: Some(max_features),
+        };
+        DecisionTreeRegressor::fit(rng, table, tree_options)
     }
 
     pub fn forest(&self) -> &[DecisionTreeRegressor] {
