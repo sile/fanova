@@ -5,88 +5,84 @@ use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct Table<'a> {
-    row_indices: Vec<usize>,
+    row_index: Vec<usize>,
     row_range: Range<usize>,
-    features: Vec<&'a [f64]>,
-    target: &'a [f64],
+    columns: Vec<&'a [f64]>,
 }
 
 impl<'a> Table<'a> {
-    pub fn new(features: Vec<&'a [f64]>, target: &'a [f64]) -> Result<Self, TableError> {
-        if features.is_empty() {
-            return Err(TableError::EmptyFeature);
+    pub fn new(columns: Vec<&'a [f64]>) -> Result<Self, TableError> {
+        if columns.is_empty() || columns[0].is_empty() {
+            return Err(TableError::EmptyTable);
         }
-        if features
-            .iter()
-            .skip(1)
-            .any(|f| f.len() != features[0].len())
-        {
-            return Err(TableError::FeatureSizeMismatch);
+
+        let rows_len = columns[0].len();
+        if columns.iter().skip(1).any(|c| c.len() != rows_len) {
+            return Err(TableError::RowSizeMismatch);
         }
-        if features[0].len() != target.len() {
-            return Err(TableError::TargetSizeMismatch);
-        }
-        if target.iter().any(|t| t.is_nan()) {
-            return Err(TableError::NanTarget);
+
+        if columns[columns.len() - 1].iter().any(|t| !t.is_finite()) {
+            return Err(TableError::NonFiniteTarget);
         }
 
         Ok(Self {
-            row_indices: (0..target.len()).collect(),
+            row_index: (0..rows_len).collect(),
             row_range: Range {
                 start: 0,
-                end: target.len(),
+                end: rows_len,
             },
-            features,
-            target,
+            columns,
         })
     }
 
-    pub fn subsample<R: Rng + ?Sized>(&mut self, rng: &mut R, size: usize) {
-        let indices = (0..size)
-            .map(|_| self.row_indices[rng.gen_range(self.row_range.start, self.row_range.end)])
-            .collect::<Vec<_>>();
-        self.row_indices = indices;
-        self.row_range.start = 0;
-        self.row_range.end = size;
-    }
-
-    pub fn is_single_target(&self) -> bool {
-        let mut target = self.target();
-        let first = target.next().expect("never fails");
-        target.all(|t| t == first)
-    }
-
     pub fn target<'b>(&'b self) -> impl 'b + Iterator<Item = f64> + Clone {
-        self.row_indices[self.row_range.start..self.row_range.end]
-            .iter()
-            .map(move |&i| self.target[i])
+        self.column(self.columns.len() - 1)
+    }
+
+    pub fn column<'b>(&'b self, column_index: usize) -> impl 'b + Iterator<Item = f64> + Clone {
+        self.rows().map(move |i| self.columns[column_index][i])
     }
 
     pub fn features_len(&self) -> usize {
-        self.features.len()
+        self.columns.len() - 1
     }
 
     pub fn rows_len(&self) -> usize {
         self.row_range.end - self.row_range.start
     }
 
-    pub fn feature<'b>(&'b self, column: usize) -> impl 'b + Iterator<Item = f64> + Clone {
-        self.row_indices[self.row_range.start..self.row_range.end]
+    fn rows<'b>(&'b self) -> impl 'b + Iterator<Item = usize> + Clone {
+        self.row_index[self.row_range.start..self.row_range.end]
             .iter()
-            .map(move |&i| self.features[column][i])
+            .copied()
     }
 
-    pub fn sort_rows_by_feature(&mut self, column: usize) {
-        let features = &self.features;
-        (&mut self.row_indices[self.row_range.start..self.row_range.end])
-            .sort_by_key(|&x| OrderedFloat(features[column][x]))
+    pub fn sort_rows_by_column(&mut self, column: usize) {
+        let columns = &self.columns;
+        (&mut self.row_index[self.row_range.start..self.row_range.end])
+            .sort_by_key(|&x| OrderedFloat(columns[column][x]))
+    }
+
+    pub fn bootstrap_sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
+        let row_index = (0..self.rows_len())
+            .map(|_| self.row_index[rng.gen_range(self.row_range.start, self.row_range.end)])
+            .collect::<Vec<_>>();
+        let row_range = Range {
+            start: 0,
+            end: self.rows_len(),
+        };
+        Self {
+            row_index,
+            row_range,
+            columns: self.columns.clone(),
+        }
     }
 
     pub fn thresholds<'b>(&'b self, column: usize) -> impl 'b + Iterator<Item = (usize, f64)> {
-        let feature = self.features[column];
-        let indices = &self.row_indices;
-        (self.row_range.start..self.row_range.end)
-            .map(move |i| feature[indices[i]])
+        // Assumption: `self.columns[column]` has been sorted.
+        let column = self.columns[column];
+        self.rows()
+            .map(move |i| column[i])
             .enumerate()
             .scan(None, |prev, (i, x)| {
                 if prev.is_none() {
@@ -124,15 +120,12 @@ impl<'a> Table<'a> {
 
 #[derive(Debug, Error, Clone)]
 pub enum TableError {
-    #[error("a table must have at least one feature")]
-    EmptyFeature,
+    #[error("table must have at least one column and one row")]
+    EmptyTable,
 
-    #[error("some of features have a different row count from others")]
-    FeatureSizeMismatch,
+    #[error("some of columns have a different row count from others")]
+    RowSizeMismatch,
 
-    #[error("target row count is different from feature row count")]
-    TargetSizeMismatch,
-
-    #[error("target must not contain NaN values")]
-    NanTarget,
+    #[error("target column contains non finite numbers")]
+    NonFiniteTarget,
 }

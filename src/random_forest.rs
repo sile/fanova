@@ -27,11 +27,9 @@ impl RandomForestRegressor {
     pub fn fit<R: Rng + ?Sized>(rng: &mut R, table: Table, options: RandomForestOptions) -> Self {
         let forest = (0..options.trees.get())
             .map(|_| {
-                let mut table = table.clone();
-                table.subsample(rng, table.rows_len());
+                let table = table.bootstrap_sample(rng);
                 let options = DecisionTreeOptions {
                     max_features: Some(std::cmp::max(1, table.features_len() / 3)),
-                    //max_features: Some(std::cmp::max(10, table.features_len() / 3)),
                 };
                 let tree = DecisionTreeRegressor::fit(rng, table, options);
                 tree

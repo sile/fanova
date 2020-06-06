@@ -19,7 +19,7 @@ impl DecisionTreeRegressor {
         table: Table<'a>,
         options: DecisionTreeOptions,
     ) -> Self {
-        let tree = Tree::fit(rng, table, Mse, false, options);
+        let tree = Tree::fit(rng, table, options);
         Self { tree }
     }
 
@@ -27,49 +27,32 @@ impl DecisionTreeRegressor {
         self.tree.predict(xs)
     }
 
-    // TODO: rename
-    pub fn fold<F, LeafF, T, LeafT>(
+    pub fn fold<InternalT, InternalF, LeafT, LeafF>(
         &self,
-        init: T,
-        mut leaf_init: LeafT,
-        mut f: F,
+        internal_init: InternalT,
+        mut internal_f: InternalF,
+        leaf_init: LeafT,
         mut leaf_f: LeafF,
     ) -> LeafT
     where
-        F: FnMut(T, &SplitPoint) -> (T, T),
-        LeafF: FnMut(LeafT, T, f64) -> LeafT,
+        InternalF: FnMut(InternalT, &SplitPoint) -> (InternalT, InternalT),
+        LeafF: FnMut(LeafT, InternalT, f64) -> LeafT,
     {
-        let mut stack = vec![(&self.tree.root, init)];
-        while let Some((node, acc)) = stack.pop() {
-            if let Some(c) = &node.children {
-                let (acc_l, acc_r) = f(acc, &c.split);
-                stack.push((&c.left, acc_l));
-                stack.push((&c.right, acc_r));
-            } else {
-                leaf_init = leaf_f(leaf_init, acc, node.label);
+        let mut leaf_acc = leaf_init;
+        let mut stack = vec![(&self.tree.root, internal_init)];
+        while let Some((node, internal_acc)) = stack.pop() {
+            match node {
+                Node::Leaf { value } => {
+                    leaf_acc = leaf_f(leaf_acc, internal_acc, *value);
+                }
+                Node::Internal { children } => {
+                    let (acc_l, acc_r) = internal_f(internal_acc, &children.split);
+                    stack.push((&children.left, acc_l));
+                    stack.push((&children.right, acc_r));
+                }
             }
         }
-        leaf_init
-    }
-}
-
-pub trait Criterion {
-    fn calculate<T>(&self, target: T) -> f64
-    where
-        T: Iterator<Item = f64> + Clone;
-}
-
-#[derive(Debug)]
-pub struct Mse;
-
-impl Criterion for Mse {
-    fn calculate<T>(&self, target: T) -> f64
-    where
-        T: Iterator<Item = f64> + Clone,
-    {
-        let n = target.clone().count() as f64;
-        let m = functions::mean(target.clone());
-        target.map(|y| (y - m).powi(2)).sum::<f64>() / n
+        leaf_acc
     }
 }
 
@@ -82,16 +65,10 @@ impl Tree {
     pub fn fit<'a, R: Rng + ?Sized>(
         rng: &mut R,
         mut table: Table<'a>,
-        criterion: impl Criterion,
-        classification: bool,
         options: DecisionTreeOptions,
     ) -> Self {
-        let mut builder = NodeBuilder {
-            rng,
-            criterion,
-            classification,
-            options,
-        };
+        let max_features = options.max_features.unwrap_or_else(|| table.features_len());
+        let mut builder = NodeBuilder { rng, max_features };
         let root = builder.build(&mut table);
         Self { root }
     }
@@ -102,28 +79,22 @@ impl Tree {
 }
 
 #[derive(Debug)]
-pub struct Node {
-    label: f64,
-    children: Option<Children>,
+pub enum Node {
+    Leaf { value: f64 },
+    Internal { children: Children },
 }
 
 impl Node {
-    fn new(label: f64) -> Self {
-        Self {
-            label,
-            children: None,
-        }
-    }
-
     fn predict(&self, xs: &[f64]) -> f64 {
-        if let Some(children) = &self.children {
-            if xs[children.split.column] <= children.split.threshold {
-                children.left.predict(xs)
-            } else {
-                children.right.predict(xs)
+        match self {
+            Self::Leaf { value } => *value,
+            Self::Internal { children } => {
+                if xs[children.split.column] <= children.split.threshold {
+                    children.left.predict(xs)
+                } else {
+                    children.right.predict(xs)
+                }
             }
-        } else {
-            self.label
         }
     }
 }
@@ -137,86 +108,58 @@ pub struct Children {
 
 #[derive(Debug)]
 pub struct SplitPoint {
-    pub information_gain: f64,
     pub column: usize,
     pub threshold: f64,
 }
 
 #[derive(Debug)]
-struct NodeBuilder<R, C> {
+struct NodeBuilder<R> {
     rng: R,
-    criterion: C,
-    classification: bool,
-    options: DecisionTreeOptions,
+    max_features: usize,
 }
 
-impl<R, C> NodeBuilder<R, C>
-where
-    R: Rng,
-    C: Criterion,
-{
+impl<R: Rng> NodeBuilder<R> {
     fn build(&mut self, table: &mut Table) -> Node {
-        if table.is_single_target() {
-            let label = table.target().nth(0).expect("never fails");
-            return Node::new(label);
-        }
-
-        let label = if self.classification {
-            functions::most_frequent(table.target())
-        } else {
-            functions::mean(table.target())
-        };
-
-        let mut node = Node::new(label);
-        let impurity = self.criterion.calculate(table.target());
-        let rows = table.target().count();
-
-        let max_features = self
-            .options
-            .max_features
-            .unwrap_or_else(|| table.features_len());
-        let columns = (0..table.features_len())
-            .filter(|&i| !table.feature(i).any(|f| f.is_nan()))
+        let impurity = functions::mse(table.target());
+        let valid_columns = (0..table.features_len())
+            .filter(|&i| !table.column(i).any(|f| f.is_nan()))
             .collect::<Vec<_>>();
 
-        let mut best: Option<SplitPoint> = None;
-        for &column in
-            columns.choose_multiple(&mut self.rng, std::cmp::min(columns.len(), max_features))
-        {
-            table.sort_rows_by_feature(column);
+        let mut best_split: Option<SplitPoint> = None;
+        let mut best_informatin_gain = std::f64::MIN;
+        let max_features = std::cmp::min(valid_columns.len(), self.max_features);
+        for &column in valid_columns.choose_multiple(&mut self.rng, max_features) {
+            table.sort_rows_by_column(column);
             for (row, threshold) in table.thresholds(column) {
-                let impurity_l = self.criterion.calculate(table.target().take(row));
-                let impurity_r = self.criterion.calculate(table.target().skip(row));
-                let n_l = row as f64 / rows as f64;
-                let n_r = 1.0 - n_l;
+                let impurity_l = functions::mse(table.target().take(row));
+                let impurity_r = functions::mse(table.target().skip(row));
+                let ratio_l = row as f64 / table.rows_len() as f64;
+                let ratio_r = 1.0 - ratio_l;
 
-                let information_gain = impurity - (n_l * impurity_l + n_r * impurity_r);
-                if best
-                    .as_ref()
-                    .map_or(true, |t| t.information_gain < information_gain)
-                {
-                    best = Some(SplitPoint {
-                        information_gain,
-                        column,
-                        threshold,
-                    });
+                let information_gain = impurity - (ratio_l * impurity_l + ratio_r * impurity_r);
+                if best_informatin_gain < information_gain {
+                    best_informatin_gain = information_gain;
+                    best_split = Some(SplitPoint { column, threshold });
                 }
             }
         }
 
-        if let Some(best) = best {
-            node.children = Some(self.build_children(table, best));
+        if let Some(split) = best_split {
+            let children = self.build_children(table, split);
+            Node::Internal { children }
+        } else {
+            let value = functions::mean(table.target());
+            Node::Leaf { value }
         }
-        node
     }
 
     fn build_children(&mut self, table: &mut Table, split: SplitPoint) -> Children {
-        table.sort_rows_by_feature(split.column);
-        let row = table
-            .feature(split.column)
+        table.sort_rows_by_column(split.column);
+        let split_row = table
+            .column(split.column)
             .take_while(|&f| f <= split.threshold)
             .count();
-        let (left, right) = table.with_split(row, |table| Box::new(self.build(table)));
+        let (left, right) = table.with_split(split_row, |table| Box::new(self.build(table)));
         Children { split, left, right }
     }
 }
@@ -228,7 +171,8 @@ mod tests {
 
     #[test]
     fn regression_works() -> Result<(), anyhow::Error> {
-        let features = vec![
+        let columns = vec![
+            // Features
             &[
                 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 1.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0,
             ],
@@ -241,30 +185,21 @@ mod tests {
             &[
                 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
             ],
+            // Target
+            &[
+                25.0, 30.0, 46.0, 45.0, 52.0, 23.0, 43.0, 35.0, 38.0, 46.0, 48.0, 52.0, 44.0, 30.0,
+            ],
         ];
-        let target = &[
-            25.0, 30.0, 46.0, 45.0, 52.0, 23.0, 43.0, 35.0, 38.0, 46.0, 48.0, 52.0, 44.0, 30.0,
-        ];
-        let train_len = target.len() - 2;
-
-        let table = Table::new(
-            features.iter().map(|f| &f[..train_len]).collect(),
-            &target[..train_len],
-        )?;
-
+        let train_len = columns[0].len() - 2;
+        let table = Table::new(columns.iter().map(|c| &c[..]).take(train_len).collect())?;
         let regressor =
             DecisionTreeRegressor::fit(&mut rand::thread_rng(), table, Default::default());
         assert_eq!(
-            regressor.predict(&features.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
+            regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
             46.0
         );
         assert_eq!(
-            regressor.predict(
-                &features
-                    .iter()
-                    .map(|f| f[train_len + 1])
-                    .collect::<Vec<_>>()
-            ),
+            regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
             52.0
         );
 

@@ -24,7 +24,6 @@ fn compute_partitions(
 ) -> Vec<Partition> {
     regressor.fold(
         config_space,
-        Vec::new(),
         |config_space, split| {
             let mut cs_l = config_space.clone();
             let mut cs_r = config_space;
@@ -32,6 +31,7 @@ fn compute_partitions(
             cs_r[split.column].start = split.threshold;
             (cs_l, cs_r)
         },
+        Vec::new(),
         |mut acc, config_space, label| {
             acc.push(Partition {
                 label,
