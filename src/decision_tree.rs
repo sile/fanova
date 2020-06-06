@@ -191,7 +191,7 @@ mod tests {
             ],
         ];
         let train_len = columns[0].len() - 2;
-        let table = Table::new(columns.iter().map(|c| &c[..]).take(train_len).collect())?;
+        let table = Table::new(columns.iter().map(|c| &c[..train_len]).collect())?;
         let regressor =
             DecisionTreeRegressor::fit(&mut rand::thread_rng(), table, Default::default());
         assert_eq!(

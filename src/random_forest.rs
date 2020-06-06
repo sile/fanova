@@ -7,13 +7,14 @@ use std::num::NonZeroUsize;
 #[derive(Debug, Clone)]
 pub struct RandomForestOptions {
     pub trees: NonZeroUsize,
+    pub max_features: Option<usize>,
 }
 
 impl Default for RandomForestOptions {
     fn default() -> Self {
         Self {
             trees: NonZeroUsize::new(100).unwrap(),
-            //trees: NonZeroUsize::new(1).unwrap(),
+            max_features: None,
         }
     }
 }
@@ -27,12 +28,14 @@ impl RandomForestRegressor {
     pub fn fit<R: Rng + ?Sized>(rng: &mut R, table: Table, options: RandomForestOptions) -> Self {
         let forest = (0..options.trees.get())
             .map(|_| {
+                let max_features = options
+                    .max_features
+                    .unwrap_or_else(|| (table.features_len() as f64 / 3.0).ceil() as usize);
                 let table = table.bootstrap_sample(rng);
                 let options = DecisionTreeOptions {
-                    max_features: Some(std::cmp::max(1, table.features_len() / 3)),
+                    max_features: Some(max_features),
                 };
-                let tree = DecisionTreeRegressor::fit(rng, table, options);
-                tree
+                DecisionTreeRegressor::fit(rng, table, options)
             })
             .collect::<Vec<_>>();
         Self { forest }
@@ -54,7 +57,8 @@ mod tests {
 
     #[test]
     fn regression_works() -> Result<(), anyhow::Error> {
-        let features = vec![
+        let columns = vec![
+            // Features.
             &[
                 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 1.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0,
             ],
@@ -67,31 +71,24 @@ mod tests {
             &[
                 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
             ],
+            // Target.
+            &[
+                25.0, 30.0, 46.0, 45.0, 52.0, 23.0, 43.0, 35.0, 38.0, 46.0, 48.0, 52.0, 44.0, 30.0,
+            ],
         ];
-        let target = &[
-            25.0, 30.0, 46.0, 45.0, 52.0, 23.0, 43.0, 35.0, 38.0, 46.0, 48.0, 52.0, 44.0, 30.0,
-        ];
-        let train_len = target.len() - 2;
+        let train_len = columns[0].len() - 2;
 
-        let table = Table::new(
-            features.iter().map(|f| &f[..train_len]).collect(),
-            &target[..train_len],
-        )?;
+        let table = Table::new(columns.iter().map(|f| &f[..train_len]).collect())?;
 
         let mut rng = rand::rngs::StdRng::from_seed(Default::default());
         let regressor = RandomForestRegressor::fit(&mut rng, table, Default::default());
         assert_eq!(
-            regressor.predict(&features.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
-            40.50667857142857
+            regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
+            41.92138095238095
         );
         assert_eq!(
-            regressor.predict(
-                &features
-                    .iter()
-                    .map(|f| f[train_len + 1])
-                    .collect::<Vec<_>>()
-            ),
-            43.81471428571429
+            regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
+            45.140666666666675
         );
 
         Ok(())
