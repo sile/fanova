@@ -1,20 +1,20 @@
 use crate::decision_tree::DecisionTreeRegressor;
-use crate::ParamRange;
+use std::ops::Range;
 
 #[derive(Debug)]
 pub struct Partition {
     pub value: f64,
-    pub space: Vec<ParamRange>,
+    pub space: Vec<Range<f64>>,
 }
 
 #[derive(Debug)]
 pub struct TreePartitions {
     partitions: Vec<Partition>,
-    config_space: Vec<ParamRange>,
+    config_space: Vec<Range<f64>>,
 }
 
 impl TreePartitions {
-    pub fn new(regressor: &DecisionTreeRegressor, config_space: Vec<ParamRange>) -> Self {
+    pub fn new(regressor: &DecisionTreeRegressor, config_space: Vec<Range<f64>>) -> Self {
         let partitions = regressor.fold(
             config_space.clone(),
             |config_space, split| {
@@ -36,7 +36,11 @@ impl TreePartitions {
         }
     }
 
-    pub fn marginal_predict(&self, columns: &[usize], space: &ParamRange) -> f64 {
+    pub fn marginal_predict(&self, columns: &[usize], space: &Range<f64>) -> f64 {
+        fn contains(a: &Range<f64>, b: &Range<f64>) -> bool {
+            a.start <= b.start && b.end <= a.end
+        }
+
         let total_size = self
             .config_space
             .iter()
@@ -46,7 +50,7 @@ impl TreePartitions {
             .product::<f64>();
         self.partitions
             .iter()
-            .filter(|p| columns.iter().all(|&c| p.space[c].contains(space)))
+            .filter(|p| columns.iter().all(|&c| contains(&p.space[c], space)))
             .map(|p| {
                 let size = p
                     .space
