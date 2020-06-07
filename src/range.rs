@@ -1,19 +1,19 @@
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
-pub struct Range {
-    start: f64,
-    end: f64,
+pub struct ParamRange {
+    pub(crate) start: f64,
+    pub(crate) end: f64,
 }
 
-impl Range {
-    pub fn new(start: f64, end: f64) -> Result<Self, RangeError> {
+impl ParamRange {
+    pub fn new(start: f64, end: f64) -> Result<Self, ParamRangeError> {
         if !start.is_finite() || !end.is_finite() {
-            Err(RangeError::NonFiniteValue)
+            Err(ParamRangeError::NonFiniteValue)
         } else if start > end {
-            Err(RangeError::NegativeRange)
+            Err(ParamRangeError::NegativeRange)
         } else {
-            Ok(Range { start, end })
+            Ok(Self { start, end })
         }
     }
 
@@ -24,10 +24,14 @@ impl Range {
     pub const fn end(&self) -> f64 {
         self.end
     }
+
+    pub fn contains(&self, other: &Self) -> bool {
+        self.start <= other.start && other.end <= self.end
+    }
 }
 
 #[derive(Debug, Error, Clone)]
-pub enum RangeError {
+pub enum ParamRangeError {
     #[error("the start and end of a range must be finite numbers")]
     NonFiniteValue,
 

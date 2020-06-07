@@ -1,23 +1,22 @@
-use crate::partitioning::TreePartitioning;
+use crate::partition::TreePartitions;
 use crate::random_forest::RandomForestRegressor;
 use crate::table::Table;
+use crate::ParamRange;
 use ordered_float::OrderedFloat;
 use rand;
 use std::collections::BTreeMap;
-use std::ops::Range;
 
-pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f64> {
+pub fn quantify_importance(config_space: Vec<ParamRange>, table: Table) -> Vec<f64> {
     let mut importances = vec![0.0; table.features_len()];
     let regressor = RandomForestRegressor::fit(&mut rand::thread_rng(), table, Default::default());
     for tree in regressor.forest().iter() {
-        let partitioning = TreePartitioning::new(tree, config_space.clone());
-        let mean = partitioning.mean(); // TODO: optimize
-        let total_variance = partitioning.variance();
+        let partitioning = TreePartitions::new(tree, config_space.clone());
+        let (mean, total_variance) = partitioning.mean_and_variance();
         for (i, u) in config_space.iter().enumerate() {
-            let subspaces = subspaces(partitioning.partitions().map(|p| p.config_space[i].clone()));
+            let subspaces = subspaces(partitioning.partitions().map(|p| p.space[i].clone()));
             let variance = subspaces
                 .map(|s| {
-                    let v = partitioning.marginal_predict2(i, &s);
+                    let v = partitioning.marginal_predict(&[i], &s);
                     (v - mean).powi(2) * (s.end - s.start)
                 })
                 .sum::<f64>();
@@ -33,7 +32,7 @@ pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f
     importances.iter().map(|&v| v / sum).collect()
 }
 
-fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> impl Iterator<Item = Range<f64>> {
+fn subspaces(partitions: impl Iterator<Item = ParamRange>) -> impl Iterator<Item = ParamRange> {
     let mut subspaces = BTreeMap::new();
     for p in partitions {
         insert_subspace(&mut subspaces, p);
@@ -41,7 +40,7 @@ fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> impl Iterator<Item
     subspaces.into_iter().map(|(_, v)| v)
 }
 
-fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut p: Range<f64>) {
+fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, ParamRange>, mut p: ParamRange) {
     if p.start == p.end {
         return;
     }
@@ -69,7 +68,7 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
             if q.end > p.end {
                 subspaces.remove(&OrderedFloat(q.start));
 
-                let r = Range {
+                let r = ParamRange {
                     start: p.end,
                     end: q.end,
                 };
@@ -81,7 +80,7 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
                 assert!(q.end <= p.end);
                 subspaces.remove(&OrderedFloat(q.start));
 
-                let r = Range {
+                let r = ParamRange {
                     start: q.end,
                     end: p.end,
                 };
