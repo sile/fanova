@@ -1,6 +1,6 @@
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
-use crate::table::Table;
+use crate::table::{Table, TableError};
 use ordered_float::OrderedFloat;
 use rand;
 use std::collections::BTreeMap;
@@ -13,7 +13,7 @@ pub struct FanovaOptions {
     random_forest: RandomForestOptions,
     feature_space: Option<Vec<Range<f64>>>,
     // target_cutoff
-    normalize_importance: bool,
+    // normalize_importance: bool,
     // max_subset_size: NonZeroUsize,
 }
 
@@ -48,26 +48,46 @@ impl<'a> Fanova<'a> {
     pub fn with_options(
         features: Vec<&'a [f64]>,
         target: &'a [f64],
-        options: FanovaOptions,
+        mut options: FanovaOptions,
     ) -> Result<Self, FanovaError> {
-        if let Some(space) = &options.feature_space {
-            if space.len() != features.len() {
+        let mut columns = features;
+        columns.push(target);
+        let table = Table::new(columns)?;
+
+        let space = if let Some(space) = options.feature_space.take() {
+            if space.len() != table.features_len() {
                 return Err(FanovaError::FeatureSpaceSizeMismatch);
             }
 
-            for (i, (range, feature)) in space.iter().zip(features.iter()).enumerate() {
-                if feature.iter().any(|&f| f < range.start || range.end <= f) {
+            for (i, range) in space.iter().enumerate() {
+                let mut feature = table.column(i);
+                if feature.any(|f| f < range.start || range.end <= f) {
                     return Err(FanovaError::TooNarrowFeatureSpace { feature: i });
                 }
             }
-        }
 
-        todo!()
-        // Ok(Self {
-        //     space,
-        //     table,
-        //     options,
-        // })
+            space
+        } else {
+            (0..table.features_len())
+                .map(|i| {
+                    let start = table
+                        .column(i)
+                        .min_by_key(|&v| OrderedFloat(v))
+                        .expect("never fails");
+                    let end = table
+                        .column(i)
+                        .max_by_key(|&v| OrderedFloat(v))
+                        .expect("never fails");
+                    Range { start, end }
+                })
+                .collect()
+        };
+
+        Ok(Self {
+            space,
+            table,
+            options,
+        })
     }
 }
 
@@ -80,14 +100,24 @@ pub enum FanovaError {
     #[error("TODO")]
     TooNarrowFeatureSpace { feature: usize },
 
-    #[error("table must have at least one column and one row")]
-    EmptyTable,
+    #[error("features and target must have one or more rows")]
+    EmptyRows,
 
-    #[error("some of columns have a different row count from others")]
+    #[error("some of features or target have a different row count from others")]
     RowSizeMismatch,
 
-    #[error("target column contains non finite numbers")]
+    #[error("target contains non finite numbers")]
     NonFiniteTarget,
+}
+
+impl From<TableError> for FanovaError {
+    fn from(f: TableError) -> Self {
+        match f {
+            TableError::EmptyTable => FanovaError::EmptyRows,
+            TableError::NonFiniteTarget => FanovaError::NonFiniteTarget,
+            TableError::RowSizeMismatch => FanovaError::RowSizeMismatch,
+        }
+    }
 }
 
 pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f64> {

@@ -1,7 +1,8 @@
-pub mod decision_tree;
-pub mod importance;
-pub mod random_forest;
+pub use importance::{Fanova, FanovaOptions};
 
+mod decision_tree;
 mod functions;
+mod importance;
 mod partition;
+mod random_forest;
 mod table;
