@@ -1,9 +1,10 @@
+use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
 use crate::table::{Table, TableError};
 use ordered_float::OrderedFloat;
-use rand;
-use std::collections::BTreeMap;
+use rand::Rng;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 use thiserror::Error;
@@ -89,6 +90,54 @@ impl<'a> Fanova<'a> {
             options,
         })
     }
+
+    // TODO: quantify_importance_parallel
+
+    pub fn quantify_importance<R: Rng + ?Sized>(self, rng: &mut R) -> Vec<Importance> {
+        let table = self.table;
+        let space = self.space;
+
+        let mut importances = HashMap::<BTreeSet<usize>, Vec<f64>>::new();
+        let regressor = RandomForestRegressor::fit(rng, table, Default::default());
+        for tree in regressor.forest().iter() {
+            let partitioning = TreePartitions::new(tree, space.clone());
+            let (mean, total_variance) = partitioning.mean_and_variance();
+            for (i, u) in space.iter().enumerate() {
+                let subspaces = subspaces(partitioning.partitions().map(|p| p.space[i].clone()));
+                let variance = subspaces
+                    .map(|s| {
+                        let v = partitioning.marginal_predict(&[i], &s);
+                        (v - mean).powi(2) * (s.end - s.start)
+                    })
+                    .sum::<f64>();
+                let v = variance / (u.end - u.start) / total_variance; // TODO: Also save standard deviation.
+
+                importances
+                    .entry(vec![i].into_iter().collect())
+                    .or_default()
+                    .push(v);
+            }
+        }
+
+        importances
+            .into_iter()
+            .map(|(features, vs)| {
+                let (mean, stddev) = functions::mean_and_stddev(vs.into_iter());
+                Importance {
+                    features,
+                    mean,
+                    stddev,
+                }
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Importance {
+    pub features: BTreeSet<usize>,
+    pub mean: f64,
+    pub stddev: f64,
 }
 
 #[non_exhaustive]
@@ -118,32 +167,6 @@ impl From<TableError> for FanovaError {
             TableError::RowSizeMismatch => FanovaError::RowSizeMismatch,
         }
     }
-}
-
-pub fn quantify_importance(config_space: Vec<Range<f64>>, table: Table) -> Vec<f64> {
-    let mut importances = vec![0.0; table.features_len()];
-    let regressor = RandomForestRegressor::fit(&mut rand::thread_rng(), table, Default::default());
-    for tree in regressor.forest().iter() {
-        let partitioning = TreePartitions::new(tree, config_space.clone());
-        let (mean, total_variance) = partitioning.mean_and_variance();
-        for (i, u) in config_space.iter().enumerate() {
-            let subspaces = subspaces(partitioning.partitions().map(|p| p.space[i].clone()));
-            let variance = subspaces
-                .map(|s| {
-                    let v = partitioning.marginal_predict(&[i], &s);
-                    (v - mean).powi(2) * (s.end - s.start)
-                })
-                .sum::<f64>();
-            let v = variance / (u.end - u.start) / total_variance; // TODO: Also save standard deviation.
-            importances[i] += v;
-        }
-    }
-
-    importances
-        .iter_mut()
-        .for_each(|v| *v /= regressor.forest().len() as f64);
-    let sum = importances.iter().map(|&v| v).sum::<f64>();
-    importances.iter().map(|&v| v / sum).collect()
 }
 
 fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> impl Iterator<Item = Range<f64>> {
