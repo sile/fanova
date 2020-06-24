@@ -1,4 +1,5 @@
 use crate::decision_tree::{DecisionTreeOptions, DecisionTreeRegressor};
+#[cfg(test)]
 use crate::functions;
 use crate::table::Table;
 use rand::Rng;
@@ -65,7 +66,8 @@ impl RandomForestRegressor {
         &self.forest
     }
 
-    pub fn predict(&self, xs: &[f64]) -> f64 {
+    #[cfg(test)]
+    fn predict(&self, xs: &[f64]) -> f64 {
         functions::mean(self.forest.iter().map(|tree| tree.predict(xs)))
     }
 }

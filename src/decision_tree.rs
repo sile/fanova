@@ -23,7 +23,8 @@ impl DecisionTreeRegressor {
         Self { tree }
     }
 
-    pub fn predict(&self, xs: &[f64]) -> f64 {
+    #[cfg(test)]
+    fn predict(&self, xs: &[f64]) -> f64 {
         self.tree.predict(xs)
     }
 
@@ -73,7 +74,8 @@ impl Tree {
         Self { root }
     }
 
-    pub fn predict(&self, xs: &[f64]) -> f64 {
+    #[cfg(test)]
+    fn predict(&self, xs: &[f64]) -> f64 {
         self.root.predict(xs)
     }
 }
@@ -85,6 +87,7 @@ pub enum Node {
 }
 
 impl Node {
+    #[cfg(test)]
     fn predict(&self, xs: &[f64]) -> f64 {
         match self {
             Self::Leaf { value } => *value,
