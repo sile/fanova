@@ -3,19 +3,17 @@ use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
 use crate::table::{Table, TableError};
 use ordered_float::OrderedFloat;
-use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 use thiserror::Error;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FanovaOptions {
     random_forest: RandomForestOptions,
     feature_space: Option<Vec<Range<f64>>>,
-    // target_cutoff
-    // normalize_importance: bool,
-    // max_subset_size: NonZeroUsize,
+    max_importance_dimension: NonZeroUsize, // target_cutoff
+                                            // normalize_importance: bool
 }
 
 impl FanovaOptions {
@@ -31,6 +29,26 @@ impl FanovaOptions {
     pub fn max_features(mut self, max_features: usize) -> Self {
         self.random_forest.max_features = Some(max_features);
         self
+    }
+
+    pub fn feature_space(mut self, space: Vec<Range<f64>>) -> Self {
+        self.feature_space = Some(space);
+        self
+    }
+
+    pub fn max_importance_dimension(mut self, max: NonZeroUsize) -> Self {
+        self.max_importance_dimension = max;
+        self
+    }
+}
+
+impl Default for FanovaOptions {
+    fn default() -> Self {
+        Self {
+            random_forest: RandomForestOptions::default(),
+            feature_space: None,
+            max_importance_dimension: NonZeroUsize::new(1).expect("never fails"),
+        }
     }
 }
 
@@ -93,12 +111,12 @@ impl<'a> Fanova<'a> {
 
     // TODO: quantify_importance_parallel
 
-    pub fn quantify_importance<R: Rng + ?Sized>(self, rng: &mut R) -> Vec<Importance> {
+    pub fn quantify_importance(self) -> Vec<Importance> {
         let table = self.table;
         let space = self.space;
 
         let mut importances = HashMap::<BTreeSet<usize>, Vec<f64>>::new();
-        let regressor = RandomForestRegressor::fit(rng, table, Default::default());
+        let regressor = RandomForestRegressor::fit(table, Default::default());
         for tree in regressor.forest().iter() {
             let partitioning = TreePartitions::new(tree, space.clone());
             let (mean, total_variance) = partitioning.mean_and_variance();
@@ -110,7 +128,7 @@ impl<'a> Fanova<'a> {
                         (v - mean).powi(2) * (s.end - s.start)
                     })
                     .sum::<f64>();
-                let v = variance / (u.end - u.start) / total_variance; // TODO: Also save standard deviation.
+                let v = variance / (u.end - u.start) / total_variance;
 
                 importances
                     .entry(vec![i].into_iter().collect())

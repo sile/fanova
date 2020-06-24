@@ -2,7 +2,8 @@ use crate::decision_tree::{DecisionTreeOptions, DecisionTreeRegressor};
 #[cfg(test)]
 use crate::functions;
 use crate::table::Table;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::num::NonZeroUsize;
 
@@ -10,6 +11,7 @@ use std::num::NonZeroUsize;
 pub struct RandomForestOptions {
     pub trees: NonZeroUsize,
     pub max_features: Option<usize>,
+    pub seed: Option<u64>,
 }
 
 impl Default for RandomForestOptions {
@@ -17,7 +19,22 @@ impl Default for RandomForestOptions {
         Self {
             trees: NonZeroUsize::new(100).expect("never fails"),
             max_features: None,
+            seed: None,
         }
+    }
+}
+
+impl RandomForestOptions {
+    fn tree_rngs(&self) -> impl Iterator<Item = StdRng> {
+        let seed_u64 = self.seed.unwrap_or_else(|| rand::thread_rng().gen());
+        let mut seed = [0u8; 32];
+        (&mut seed[0..8]).copy_from_slice(&seed_u64.to_be_bytes()[..]);
+        let mut rng = StdRng::from_seed(seed);
+        (0..self.trees.get()).map(move |_| {
+            let mut seed = [0u8; 32];
+            rng.fill(&mut seed);
+            StdRng::from_seed(seed)
+        })
     }
 }
 
@@ -27,19 +44,22 @@ pub struct RandomForestRegressor {
 }
 
 impl RandomForestRegressor {
-    pub fn fit<R: Rng + ?Sized>(rng: &mut R, table: Table, options: RandomForestOptions) -> Self {
+    pub fn fit(table: Table, options: RandomForestOptions) -> Self {
         let max_features = Self::decide_max_features(&table, &options);
-        let forest = (0..options.trees.get())
-            .map(|_| Self::tree_fit(rng, &table, max_features))
+        let forest = options
+            .tree_rngs()
+            .map(|mut rng| Self::tree_fit(&mut rng, &table, max_features))
             .collect::<Vec<_>>();
         Self { forest }
     }
 
     pub fn fit_parallel(table: Table, options: RandomForestOptions) -> Self {
         let max_features = Self::decide_max_features(&table, &options);
-        let forest = (0..options.trees.get())
+        let forest = options
+            .tree_rngs()
+            .collect::<Vec<_>>()
             .into_par_iter()
-            .map(|_| Self::tree_fit(&mut rand::thread_rng(), &table, max_features))
+            .map(|mut rng| Self::tree_fit(&mut rng, &table, max_features))
             .collect::<Vec<_>>();
         Self { forest }
     }
