@@ -2,7 +2,9 @@ use crate::decision_tree::DecisionTreeRegressor;
 use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
+use crate::space::SparseFeatureSpace;
 use crate::table::{Table, TableError};
+use crate::FeatureSpace;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -13,9 +15,8 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub struct FanovaOptions {
     random_forest: RandomForestOptions,
-    feature_space: Option<Vec<Range<f64>>>,
-    max_importance_dimension: NonZeroUsize, // target_cutoff
-                                            // normalize_importance: bool
+    feature_space: Option<FeatureSpace>,
+    max_importance_dimension: NonZeroUsize, // TODO: target_cutoff
 }
 
 impl FanovaOptions {
@@ -33,7 +34,7 @@ impl FanovaOptions {
         self
     }
 
-    pub fn feature_space(mut self, space: Vec<Range<f64>>) -> Self {
+    pub fn feature_space(mut self, space: FeatureSpace) -> Self {
         self.feature_space = Some(space);
         self
     }
@@ -61,7 +62,7 @@ impl Default for FanovaOptions {
 
 #[derive(Debug)]
 pub struct Fanova<'a> {
-    space: Vec<Range<f64>>,
+    space: FeatureSpace,
     table: Option<Table<'a>>,
     options: FanovaOptions,
 }
@@ -81,11 +82,11 @@ impl<'a> Fanova<'a> {
         let table = Table::new(columns)?;
 
         let space = if let Some(space) = options.feature_space.take() {
-            if space.len() != table.features_len() {
+            if space.ranges().len() != table.features_len() {
                 return Err(FanovaError::FeatureSpaceSizeMismatch);
             }
 
-            for (i, range) in space.iter().enumerate() {
+            for (i, range) in space.ranges().iter().enumerate() {
                 let mut feature = table.column(i);
                 if feature.any(|f| f < range.start || range.end <= f) {
                     return Err(FanovaError::TooNarrowFeatureSpace { feature: i });
@@ -94,19 +95,7 @@ impl<'a> Fanova<'a> {
 
             space
         } else {
-            (0..table.features_len())
-                .map(|i| {
-                    let start = table
-                        .column(i)
-                        .min_by_key(|&v| OrderedFloat(v))
-                        .expect("never fails");
-                    let end = table
-                        .column(i)
-                        .max_by_key(|&v| OrderedFloat(v))
-                        .expect("never fails");
-                    Range { start, end }
-                })
-                .collect()
+            FeatureSpace::from_table(&table)
         };
 
         Ok(Self {
@@ -120,13 +109,13 @@ impl<'a> Fanova<'a> {
 
     fn calc_effect(
         &self,
-        subspace: &[(usize, Range<f64>)],
+        subspace: &SparseFeatureSpace,
         partitioning: &TreePartitions,
         mean: f64,
     ) -> f64 {
         let mut v = partitioning.marginal_predict(subspace);
-        for k in 1..subspace.len() {
-            for subspace in subspace.iter().cloned().combinations(k) {
+        for k in 1..subspace.features() {
+            for subspace in subspace.iter().combinations(k).map(SparseFeatureSpace::new) {
                 v -= self.calc_effect(&subspace, partitioning, mean);
             }
         }
@@ -143,16 +132,21 @@ impl<'a> Fanova<'a> {
         let (mean, total_variance) = partitioning.mean_and_variance();
 
         for k in 1..self.options.max_importance_dimension.get() {
-            for columns in (0..space.len()).combinations(k) {
+            for columns in (0..space.ranges().len()).combinations(k) {
                 let variance = columns
                     .iter()
                     .copied()
                     .map(|i| {
-                        subspaces(partitioning.partitions().map(|p| p.space[i].clone()))
-                            .map(|space| (i, space))
-                            .collect::<Vec<_>>()
+                        subspaces(
+                            partitioning
+                                .partitions()
+                                .map(|p| p.space.ranges()[i].clone()),
+                        )
+                        .map(|space| (i, space))
+                        .collect::<Vec<_>>()
                     })
                     .multi_cartesian_product()
+                    .map(SparseFeatureSpace::new)
                     .map(|subspace| {
                         let effect = self.calc_effect(&subspace, &partitioning, mean);
                         let size = subspace.iter().map(|(_, s)| s.end - s.start).sum::<f64>();
@@ -162,7 +156,7 @@ impl<'a> Fanova<'a> {
 
                 let size = columns
                     .iter()
-                    .map(|&i| &space[i])
+                    .map(|&i| &space.ranges()[i])
                     .map(|s| s.end - s.start)
                     .sum::<f64>();
                 let v = variance / size / total_variance;
