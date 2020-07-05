@@ -36,7 +36,7 @@ impl TreePartitions {
         }
     }
 
-    pub fn marginal_predict(&self, columns: &[usize], space: &Range<f64>) -> f64 {
+    pub fn marginal_predict(&self, fixed_space: &[(usize, Range<f64>)]) -> f64 {
         fn contains(a: &Range<f64>, b: &Range<f64>) -> bool {
             a.start <= b.start && b.end <= a.end
         }
@@ -45,18 +45,22 @@ impl TreePartitions {
             .config_space
             .iter()
             .enumerate()
-            .filter(|(i, _)| !columns.contains(i))
+            .filter(|(i, _)| fixed_space.iter().find(|(j, _)| i == j).is_none())
             .map(|(_, s)| s.end - s.start)
             .product::<f64>();
         self.partitions
             .iter()
-            .filter(|p| columns.iter().all(|&c| contains(&p.space[c], space)))
+            .filter(|p| {
+                fixed_space
+                    .iter()
+                    .all(|(c, space)| contains(&p.space[*c], space))
+            })
             .map(|p| {
                 let size = p
                     .space
                     .iter()
                     .enumerate()
-                    .filter(|(i, _)| !columns.contains(i))
+                    .filter(|(i, _)| fixed_space.iter().find(|(j, _)| i == j).is_none())
                     .map(|(_, s)| s.end - s.start)
                     .product::<f64>();
                 (size / total_size) * p.value

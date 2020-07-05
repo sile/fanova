@@ -1,7 +1,9 @@
+use crate::decision_tree::DecisionTreeRegressor;
 use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
 use crate::table::{Table, TableError};
+use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
@@ -40,6 +42,11 @@ impl FanovaOptions {
         self.max_importance_dimension = max;
         self
     }
+
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.random_forest.seed = Some(seed);
+        self
+    }
 }
 
 impl Default for FanovaOptions {
@@ -55,7 +62,7 @@ impl Default for FanovaOptions {
 #[derive(Debug)]
 pub struct Fanova<'a> {
     space: Vec<Range<f64>>,
-    table: Table<'a>,
+    table: Option<Table<'a>>,
     options: FanovaOptions,
 }
 
@@ -104,36 +111,78 @@ impl<'a> Fanova<'a> {
 
         Ok(Self {
             space,
-            table,
+            table: Some(table),
             options,
         })
     }
 
     // TODO: quantify_importance_parallel
 
-    pub fn quantify_importance(self) -> Vec<Importance> {
-        let table = self.table;
-        let space = self.space;
+    fn calc_effect(
+        &self,
+        subspace: &[(usize, Range<f64>)],
+        partitioning: &TreePartitions,
+        mean: f64,
+    ) -> f64 {
+        let mut v = partitioning.marginal_predict(subspace);
+        for k in 1..subspace.len() {
+            for subspace in subspace.iter().cloned().combinations(k) {
+                v -= self.calc_effect(&subspace, partitioning, mean);
+            }
+        }
+        v - mean
+    }
+
+    fn quantify_importance_tree(
+        &self,
+        tree: &DecisionTreeRegressor,
+    ) -> HashMap<BTreeSet<usize>, f64> {
+        let space = self.space.clone();
+        let mut importances = HashMap::<BTreeSet<usize>, f64>::new();
+        let partitioning = TreePartitions::new(tree, space.clone());
+        let (mean, total_variance) = partitioning.mean_and_variance();
+
+        for k in 1..self.options.max_importance_dimension.get() {
+            for columns in (0..space.len()).combinations(k) {
+                let variance = columns
+                    .iter()
+                    .copied()
+                    .map(|i| {
+                        subspaces(partitioning.partitions().map(|p| p.space[i].clone()))
+                            .map(|space| (i, space))
+                            .collect::<Vec<_>>()
+                    })
+                    .multi_cartesian_product()
+                    .map(|subspace| {
+                        let effect = self.calc_effect(&subspace, &partitioning, mean);
+                        let size = subspace.iter().map(|(_, s)| s.end - s.start).sum::<f64>();
+                        effect.powi(2) * size
+                    })
+                    .sum::<f64>();
+
+                let size = columns
+                    .iter()
+                    .map(|&i| &space[i])
+                    .map(|s| s.end - s.start)
+                    .sum::<f64>();
+                let v = variance / size / total_variance;
+
+                let old = importances.insert(columns.into_iter().collect(), v);
+                assert!(old.is_none());
+            }
+        }
+
+        importances
+    }
+
+    pub fn quantify_importance(mut self) -> Vec<Importance> {
+        let table = self.table.take().expect("never fails");
 
         let mut importances = HashMap::<BTreeSet<usize>, Vec<f64>>::new();
         let regressor = RandomForestRegressor::fit(table, Default::default());
         for tree in regressor.forest().iter() {
-            let partitioning = TreePartitions::new(tree, space.clone());
-            let (mean, total_variance) = partitioning.mean_and_variance();
-            for (i, u) in space.iter().enumerate() {
-                let subspaces = subspaces(partitioning.partitions().map(|p| p.space[i].clone()));
-                let variance = subspaces
-                    .map(|s| {
-                        let v = partitioning.marginal_predict(&[i], &s);
-                        (v - mean).powi(2) * (s.end - s.start)
-                    })
-                    .sum::<f64>();
-                let v = variance / (u.end - u.start) / total_variance;
-
-                importances
-                    .entry(vec![i].into_iter().collect())
-                    .or_default()
-                    .push(v);
+            for (k, v) in self.quantify_importance_tree(tree) {
+                importances.entry(k).or_default().push(v);
             }
         }
 
