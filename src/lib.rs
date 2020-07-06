@@ -1,5 +1,8 @@
 pub use importance::{Fanova, FanovaOptions};
+pub use random_forest::RandomForestOptions;
 pub use space::{FeatureSpace, FeatureSpaceError};
+
+pub mod fanova;
 
 mod decision_tree;
 mod functions;
