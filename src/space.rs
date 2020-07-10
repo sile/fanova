@@ -63,6 +63,16 @@ impl FeatureSpace {
             .iter()
             .all(|(i, r)| self.0[i].start <= r.start && r.end <= self.0[i].end)
     }
+
+    pub(crate) fn to_sparse(&self, features: &[usize]) -> SparseFeatureSpace {
+        SparseFeatureSpace(
+            features
+                .iter()
+                .copied()
+                .map(|i| (i, self.0[i].clone()))
+                .collect(),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +85,10 @@ impl SparseFeatureSpace {
 
     pub fn features(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn size(&self) -> f64 {
+        self.0.iter().map(|(_, r)| r.end - r.start).sum()
     }
 
     pub fn iter<'a>(&'a self) -> impl 'a + Iterator<Item = (usize, Range<f64>)> {
