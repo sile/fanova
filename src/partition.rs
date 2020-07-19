@@ -1,6 +1,5 @@
 use crate::decision_tree::DecisionTreeRegressor;
-use crate::space::SparseFeatureSpace;
-use crate::FeatureSpace;
+use crate::space::{FeatureSpace, SparseFeatureSpace};
 
 #[derive(Debug)]
 pub struct Partition {

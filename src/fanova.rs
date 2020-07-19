@@ -2,13 +2,11 @@ use crate::decision_tree::DecisionTreeRegressor;
 use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
-use crate::space::SparseFeatureSpace;
+use crate::space::{FeatureSpace, SparseFeatureSpace};
 use crate::table::{Table, TableError};
-use crate::FeatureSpace;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use thiserror::Error;
@@ -16,9 +14,7 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub struct FanovaOptions {
     random_forest: RandomForestOptions,
-    feature_space: Option<FeatureSpace>,
     parallel: bool,
-    target_cutoff: Range<f64>,
 }
 
 impl FanovaOptions {
@@ -31,59 +27,17 @@ impl FanovaOptions {
         self
     }
 
-    pub fn feature_space(mut self, space: FeatureSpace) -> Self {
-        self.feature_space = Some(space);
-        self
-    }
-
     pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
-    pub fn target_cutoff_low(mut self, v: f64) -> Self {
-        self.target_cutoff.start = v;
-        self
-    }
-
-    pub fn target_cutoff_high(mut self, v: f64) -> Self {
-        self.target_cutoff.end = v;
-        self
-    }
-
-    pub fn fit(mut self, features: Vec<&[f64]>, target: &[f64]) -> Result<Fanova, FitError> {
+    pub fn fit(self, features: Vec<&[f64]>, target: &[f64]) -> Result<Fanova, FitError> {
         let mut columns = features;
-        let mut target = Cow::Borrowed(target);
-
-        if self.target_cutoff.start != std::f64::NEG_INFINITY
-            || self.target_cutoff.end != std::f64::INFINITY
-        {
-            target = Cow::Owned(
-                target
-                    .iter()
-                    .map(|&v| v.max(self.target_cutoff.start).min(self.target_cutoff.end))
-                    .collect::<Vec<_>>(),
-            );
-        }
-        columns.push(&target);
+        columns.push(target);
         let table = Table::new(columns)?;
 
-        let feature_space = if let Some(space) = self.feature_space.take() {
-            if space.ranges().len() != table.features_len() {
-                return Err(FitError::FeatureSpaceSizeMismatch);
-            }
-
-            for (i, range) in space.ranges().iter().enumerate() {
-                let mut feature = table.column(i);
-                if feature.any(|f| f < range.start || range.end <= f) {
-                    return Err(FitError::TooNarrowFeatureSpace { feature: i });
-                }
-            }
-
-            space
-        } else {
-            FeatureSpace::from_table(&table)
-        };
+        let feature_space = FeatureSpace::from_table(&table);
 
         let trees = if self.parallel {
             RandomForestRegressor::fit_parallel(table, self.random_forest)
@@ -111,12 +65,7 @@ impl Default for FanovaOptions {
     fn default() -> Self {
         Self {
             random_forest: RandomForestOptions::default(),
-            feature_space: None,
             parallel: false,
-            target_cutoff: Range {
-                start: std::f64::NEG_INFINITY,
-                end: std::f64::INFINITY,
-            },
         }
     }
 }
@@ -236,12 +185,6 @@ pub struct Importance {
 #[non_exhaustive]
 #[derive(Debug, Error, Clone)]
 pub enum FitError {
-    #[error("TODO")]
-    FeatureSpaceSizeMismatch,
-
-    #[error("TODO")]
-    TooNarrowFeatureSpace { feature: usize },
-
     #[error("features and target must have one or more rows")]
     EmptyRows,
 

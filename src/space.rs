@@ -1,26 +1,11 @@
 use crate::table::Table;
 use ordered_float::OrderedFloat;
 use std::ops::Range;
-use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct FeatureSpace(Vec<Range<f64>>);
 
 impl FeatureSpace {
-    pub fn new(ranges: Vec<Range<f64>>) -> Result<Self, FeatureSpaceError> {
-        for r in &ranges {
-            if !(r.start.is_finite() && r.end.is_finite()) {
-                return Err(FeatureSpaceError::InfiniteRange);
-            }
-
-            if r.end < r.start {
-                return Err(FeatureSpaceError::NegativeRange);
-            }
-        }
-
-        Ok(Self(ranges))
-    }
-
     pub(crate) fn from_table(table: &Table) -> Self {
         let ranges = (0..table.features_len())
             .map(|i| {
@@ -36,10 +21,6 @@ impl FeatureSpace {
             })
             .collect();
         Self(ranges)
-    }
-
-    pub fn size(&self) -> f64 {
-        self.0.iter().map(|r| r.end - r.start).product()
     }
 
     pub fn ranges(&self) -> &[Range<f64>] {
@@ -90,13 +71,4 @@ impl SparseFeatureSpace {
     pub fn iter<'a>(&'a self) -> impl 'a + Iterator<Item = (usize, Range<f64>)> {
         self.0.iter().map(|x| (x.0, x.1.clone()))
     }
-}
-
-#[derive(Debug, Clone, Error)]
-pub enum FeatureSpaceError {
-    #[error("TODO")]
-    NegativeRange,
-
-    #[error("TODO")]
-    InfiniteRange,
 }
