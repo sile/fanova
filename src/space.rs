@@ -83,10 +83,6 @@ impl SparseFeatureSpace {
         Self(space)
     }
 
-    pub fn features(&self) -> usize {
-        self.0.len()
-    }
-
     pub fn size(&self) -> f64 {
         self.0.iter().map(|(_, r)| r.end - r.start).product()
     }

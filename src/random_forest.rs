@@ -78,9 +78,6 @@ impl RandomForestRegressor {
     }
 
     fn decide_max_features(table: &Table, options: &RandomForestOptions) -> usize {
-        // options
-        //     .max_features
-        //     .unwrap_or_else(|| (table.features_len() as f64 / 3.0).ceil() as usize)
         options
             .max_features
             .unwrap_or_else(|| (table.features_len() as f64).sqrt().ceil() as usize)
@@ -98,8 +95,8 @@ impl RandomForestRegressor {
         DecisionTreeRegressor::fit(rng, table, tree_options)
     }
 
-    pub fn forest(&self) -> &[DecisionTreeRegressor] {
-        &self.forest
+    pub fn into_trees(self) -> Vec<DecisionTreeRegressor> {
+        self.forest
     }
 
     #[cfg(test)]

@@ -7,7 +7,7 @@ use crate::table::{Table, TableError};
 use crate::FeatureSpace;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -85,15 +85,24 @@ impl FanovaOptions {
             FeatureSpace::from_table(&table)
         };
 
-        let random_forest = if self.parallel {
+        let trees = if self.parallel {
             RandomForestRegressor::fit_parallel(table, self.random_forest)
+                .into_trees()
+                .into_par_iter()
+                .map(|tree| Tree::new(tree, feature_space.clone()))
+                .collect()
         } else {
             RandomForestRegressor::fit(table, self.random_forest)
+                .into_trees()
+                .into_iter()
+                .map(|tree| Tree::new(tree, feature_space.clone()))
+                .collect()
         };
+
         Ok(Fanova {
-            random_forest,
             feature_space,
             parallel: self.parallel,
+            trees,
         })
     }
 }
@@ -113,8 +122,29 @@ impl Default for FanovaOptions {
 }
 
 #[derive(Debug)]
+struct Tree {
+    partitions: TreePartitions,
+    mean: f64,
+    variance: f64,
+    importances: BTreeMap<Vec<usize>, f64>,
+}
+
+impl Tree {
+    fn new(regressor: DecisionTreeRegressor, feature_space: FeatureSpace) -> Self {
+        let partitions = TreePartitions::new(&regressor, feature_space);
+        let (mean, variance) = partitions.mean_and_variance();
+        Self {
+            partitions,
+            mean,
+            variance,
+            importances: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Fanova {
-    random_forest: RandomForestRegressor,
+    trees: Vec<Tree>,
     feature_space: FeatureSpace,
     parallel: bool,
 }
@@ -124,20 +154,30 @@ impl Fanova {
         FanovaOptions::default().fit(features, target)
     }
 
-    pub fn quantify_importance(&self, features: &[usize]) -> Importance {
+    pub fn quantify_importance(&mut self, features: &[usize]) -> Importance {
+        if features
+            .iter()
+            .any(|&f| f >= self.feature_space.ranges().len())
+        {
+            return Importance {
+                mean: 0.0,
+                stddev: 0.0,
+            };
+        }
+
+        let mut trees = std::mem::replace(&mut self.trees, Vec::new());
         let importances = if self.parallel {
-            self.random_forest
-                .forest()
-                .par_iter()
+            trees
+                .par_iter_mut()
                 .map(|tree| self.quantify_importance_tree(tree, features))
                 .collect::<Vec<_>>()
         } else {
-            self.random_forest
-                .forest()
-                .iter()
+            trees
+                .iter_mut()
                 .map(|tree| self.quantify_importance_tree(tree, features))
                 .collect::<Vec<_>>()
         };
+        self.trees = trees;
 
         let (mean, stddev) = functions::mean_and_stddev(importances.into_iter());
         Importance { mean, stddev }
@@ -148,32 +188,17 @@ impl Fanova {
         (1..=k).flat_map(move |k| (0..features).combinations(k))
     }
 
-    fn calc_effect(
-        &self,
-        subspace: &SparseFeatureSpace,
-        partitioning: &TreePartitions,
-        mean: f64,
-    ) -> f64 {
-        let mut v = partitioning.marginal_predict(subspace);
-        for k in 1..subspace.features() {
-            for subspace in subspace.iter().combinations(k).map(SparseFeatureSpace::new) {
-                v -= self.calc_effect(&subspace, partitioning, mean);
-            }
+    fn quantify_importance_tree(&self, tree: &mut Tree, features: &[usize]) -> f64 {
+        if let Some(&importance) = tree.importances.get(features) {
+            return importance;
         }
-        v - mean
-    }
-
-    fn quantify_importance_tree(&self, tree: &DecisionTreeRegressor, features: &[usize]) -> f64 {
-        // TODO: out-of-range check
-        let partitioning = TreePartitions::new(tree, self.feature_space.clone());
-        let (mean, total_variance) = partitioning.mean_and_variance();
 
         let variance = features
             .iter()
             .copied()
             .map(|i| {
                 subspaces(
-                    partitioning
+                    tree.partitions
                         .partitions()
                         .map(|p| p.space.ranges()[i].clone()),
                 )
@@ -183,13 +208,22 @@ impl Fanova {
             .multi_cartesian_product()
             .map(SparseFeatureSpace::new)
             .map(|subspace| {
-                let effect = self.calc_effect(&subspace, &partitioning, mean);
-                effect.powi(2) * subspace.size() as f64
+                let variance = tree.partitions.marginal_predict(&subspace) - tree.mean;
+                let weight = subspace.size() as f64;
+                variance.powi(2) * weight
             })
             .sum::<f64>();
 
         let size = self.feature_space.to_sparse(features).size();
-        return variance / size / total_variance;
+        let mut importance = variance / size / tree.variance;
+        for k in 1..features.len() {
+            for sub_features in features.iter().copied().combinations(k) {
+                importance -= self.quantify_importance_tree(tree, &sub_features);
+            }
+        }
+
+        tree.importances.insert(features.to_owned(), importance);
+        importance
     }
 }
 
@@ -318,7 +352,7 @@ mod tests {
             target.push(t);
         }
 
-        let fanova = FanovaOptions::default()
+        let mut fanova = FanovaOptions::default()
             .random_forest(RandomForestOptions::default().seed(0))
             .fit(vec![&feature1, &feature2, &feature3], &target)?;
         let importances = (0..3)
@@ -352,7 +386,7 @@ mod tests {
             target.push(t);
         }
 
-        let fanova = FanovaOptions::default()
+        let mut fanova = FanovaOptions::default()
             .random_forest(RandomForestOptions::default().seed(0))
             .parallel()
             .fit(vec![&feature1, &feature2, &feature3], &target)?;
@@ -366,9 +400,9 @@ mod tests {
                 0.08594444775918132,
                 0.13762622244474054,
                 0.1436884807101818,
-                0.0970577365624792,
-                0.0766824385057356,
-                0.4098183710868284
+                0.09705773656247917,
+                0.07668243850573553,
+                0.40981837108682856
             ]
         );
 
