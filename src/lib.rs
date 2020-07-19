@@ -1,4 +1,4 @@
-//! A Rust fANOVA (functional analysis of variance) implementation.
+//! A Rust [fANOVA] (functional analysis of variance) implementation.
 //!
 //! fANOVA provides a way to calculate feature importance.
 //!

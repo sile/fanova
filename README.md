@@ -7,7 +7,7 @@ fanova
 [![Coverage Status](https://coveralls.io/repos/github/sile/fanova/badge.svg?branch=master)](https://coveralls.io/github/sile/fanova?branch=master)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Rust fANOVA (functional analysis of variance) implementation.
+A Rust [fANOVA] (functional analysis of variance) implementation.
 
 fANOVA provides a way to calculate feature importance.
 
