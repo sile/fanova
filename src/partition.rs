@@ -28,57 +28,37 @@ impl TreePartitions {
     }
 
     pub fn marginal_predict(&self, fixed_space: &SparseFeatureSpace) -> f64 {
-        let total_size = self
-            .space
-            .ranges()
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| fixed_space.iter().find(|(j, _)| i == j).is_none())
-            .map(|(_, s)| s.end - s.start)
-            .product::<f64>();
+        let overall_size = self.space.marginal_size(fixed_space);
         self.partitions
             .iter()
             .filter(|p| p.space.covers(&fixed_space))
             .map(|p| {
-                let size = p
-                    .space
-                    .ranges()
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| fixed_space.iter().find(|(j, _)| i == j).is_none())
-                    .map(|(_, s)| s.end - s.start)
-                    .product::<f64>();
-                (size / total_size) * p.value
+                let size = p.space.marginal_size(fixed_space);
+                (size / overall_size) * p.value
             })
             .sum()
     }
 
     pub fn mean_and_variance(&self) -> (f64, f64) {
+        let overall_size = self.space.size();
         let weights = self
-            .partitions()
-            .map(|p| {
-                p.space
-                    .ranges()
-                    .iter()
-                    .zip(self.space.ranges().iter())
-                    .map(|(cs0, cs1)| (cs0.end - cs0.start) / (cs1.end - cs1.start))
-                    .product::<f64>()
-            })
+            .iter()
+            .map(|p| p.space.size() / overall_size)
             .collect::<Vec<_>>();
         let mean = self
-            .partitions()
+            .iter()
             .zip(weights.iter())
             .map(|(p, w)| w * p.value)
             .sum::<f64>();
         let variance = self
-            .partitions()
+            .iter()
             .zip(weights.iter())
             .map(|(p, w)| w * (p.value - mean).powi(2))
             .sum::<f64>();
         (mean, variance)
     }
 
-    pub fn partitions(&self) -> impl Iterator<Item = &Partition> {
+    pub fn iter(&self) -> impl Iterator<Item = &Partition> {
         self.partitions.iter()
     }
 }

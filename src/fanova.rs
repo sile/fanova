@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use thiserror::Error;
 
+/// fANOVA options.
 #[derive(Debug, Clone)]
 pub struct FanovaOptions {
     random_forest: RandomForestOptions,
@@ -18,20 +19,30 @@ pub struct FanovaOptions {
 }
 
 impl FanovaOptions {
+    /// Make `FanovaOptions` with the default settings.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the `RandomForestOptions`.
+    ///
+    /// The default value is `RandomForestOptions::default()`.
     pub fn random_forest(mut self, options: RandomForestOptions) -> Self {
         self.random_forest = options;
         self
     }
 
+    /// Enables parallel executions of `Fanova::{fit, quantify_importance}`.
+    ///
+    /// This library use `rayon` for parallel execution.
+    /// Please see [the rayon document](https://docs.rs/rayon) if you want to configure the behavior
+    /// (e.g., the number of worker threads).
     pub fn parallel(mut self) -> Self {
         self.parallel = true;
         self
     }
 
+    /// Builds an fANOVA model for the given features and target.
     pub fn fit(self, features: Vec<&[f64]>, target: &[f64]) -> Result<Fanova, FitError> {
         let mut columns = features;
         columns.push(target);
@@ -91,6 +102,7 @@ impl Tree {
     }
 }
 
+/// fANOVA object.
 #[derive(Debug)]
 pub struct Fanova {
     trees: Vec<Tree>,
@@ -99,10 +111,14 @@ pub struct Fanova {
 }
 
 impl Fanova {
+    /// Builds an fANOVA model for the given features and target.
+    ///
+    /// This is equivalent to `FanovaOptions::new().fit(features, target)`.
     pub fn fit(features: Vec<&[f64]>, target: &[f64]) -> Result<Self, FitError> {
         FanovaOptions::default().fit(features, target)
     }
 
+    /// Calculates the importance of the given features.
     pub fn quantify_importance(&mut self, features: &[usize]) -> Importance {
         if features
             .iter()
@@ -132,7 +148,8 @@ impl Fanova {
         Importance { mean, stddev }
     }
 
-    pub fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> {
+    #[cfg(test)]
+    fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> {
         let features = self.feature_space.ranges().len();
         (1..=k).flat_map(move |k| (0..features).combinations(k))
     }
@@ -146,13 +163,9 @@ impl Fanova {
             .iter()
             .copied()
             .map(|i| {
-                subspaces(
-                    tree.partitions
-                        .partitions()
-                        .map(|p| p.space.ranges()[i].clone()),
-                )
-                .map(|space| (i, space))
-                .collect::<Vec<_>>()
+                subspaces(tree.partitions.iter().map(|p| p.space.ranges()[i].clone()))
+                    .map(|space| (i, space))
+                    .collect::<Vec<_>>()
             })
             .multi_cartesian_product()
             .map(SparseFeatureSpace::new)
@@ -163,7 +176,10 @@ impl Fanova {
             })
             .sum::<f64>();
 
-        let size = self.feature_space.to_sparse(features).size();
+        let size = self
+            .feature_space
+            .to_sparse(features.iter().copied())
+            .size();
         let mut importance = variance / size / tree.variance;
         for k in 1..features.len() {
             for sub_features in features.iter().copied().combinations(k) {
@@ -176,21 +192,29 @@ impl Fanova {
     }
 }
 
+/// Importance of a feature set.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Importance {
+    /// Average of importances across random forest trees.
     pub mean: f64,
+
+    /// Standard deviation of importances across random forest trees.
     pub stddev: f64,
 }
 
+/// Possible errors which could be returned by `Fanove::fit` method.
 #[non_exhaustive]
 #[derive(Debug, Error, Clone)]
 pub enum FitError {
+    /// Features and target must have one or more rows.
     #[error("features and target must have one or more rows")]
     EmptyRows,
 
+    /// Some of features or target have a different row count from others.
     #[error("some of features or target have a different row count from others")]
     RowSizeMismatch,
 
+    /// Target contains non finite numbers.
     #[error("target contains non finite numbers")]
     NonFiniteTarget,
 }
@@ -303,7 +327,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             importances,
-            vec![0.02744461966313835, 0.2299188376928614, 0.6288784011550144]
+            vec![0.02744461966313835, 0.22991883769286145, 0.6288784011550144]
         );
 
         Ok(())
@@ -340,10 +364,10 @@ mod tests {
         assert_eq!(
             importances,
             vec![
-                0.08594444775918132,
+                0.08594444775918131,
                 0.13762622244474054,
                 0.1436884807101818,
-                0.09705773656247917,
+                0.0970577365624792,
                 0.07668243850573553,
                 0.40981837108682856
             ]

@@ -7,22 +7,41 @@ use rand::{Rng, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::num::NonZeroUsize;
 
+/// Random forest options.
 #[derive(Debug, Clone)]
 pub struct RandomForestOptions {
-    // TODO: Make these fields private.
-    pub trees: NonZeroUsize,
-    pub max_features: Option<usize>,
-    pub seed: Option<u64>,
+    trees: NonZeroUsize,
+    max_features: Option<NonZeroUsize>,
+    seed: Option<u64>,
 }
 
 impl RandomForestOptions {
+    /// Makes a `RandomForestOptions` instance with the default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the random generator seed.
+    ///
+    /// The default value is random.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    /// Sets the number of decision trees.
+    ///
+    /// The default value is `100`.
     pub fn trees(mut self, trees: NonZeroUsize) -> Self {
         self.trees = trees;
         self
     }
 
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.seed = Some(seed);
+    /// Sets the number of maximum candidate features used to determine each decision tree node.
+    ///
+    /// The default value is `sqrt(the number of features)`.
+    pub fn max_features(mut self, max: NonZeroUsize) -> Self {
+        self.max_features = Some(max);
         self
     }
 }
@@ -78,9 +97,11 @@ impl RandomForestRegressor {
     }
 
     fn decide_max_features(table: &Table, options: &RandomForestOptions) -> usize {
-        options
-            .max_features
-            .unwrap_or_else(|| (table.features_len() as f64).sqrt().ceil() as usize)
+        if let Some(n) = options.max_features {
+            n.get()
+        } else {
+            (table.features_len() as f64).sqrt().ceil() as usize
+        }
     }
 
     fn tree_fit<R: Rng + ?Sized>(

@@ -6,7 +6,7 @@ use std::ops::Range;
 pub struct FeatureSpace(Vec<Range<f64>>);
 
 impl FeatureSpace {
-    pub(crate) fn from_table(table: &Table) -> Self {
+    pub fn from_table(table: &Table) -> Self {
         let ranges = (0..table.features_len())
             .map(|i| {
                 let start = table
@@ -27,7 +27,7 @@ impl FeatureSpace {
         &self.0
     }
 
-    pub(crate) fn split(&self, feature_index: usize, split_point: f64) -> (Self, Self) {
+    pub fn split(&self, feature_index: usize, split_point: f64) -> (Self, Self) {
         debug_assert!(feature_index < self.0.len());
         debug_assert!(self.0[feature_index].start <= split_point);
         debug_assert!(split_point <= self.0[feature_index].end);
@@ -39,20 +39,27 @@ impl FeatureSpace {
         (lower, upper)
     }
 
-    pub(crate) fn covers(&self, space: &SparseFeatureSpace) -> bool {
+    pub fn covers(&self, space: &SparseFeatureSpace) -> bool {
         space
             .iter()
             .all(|(i, r)| self.0[i].start <= r.start && r.end <= self.0[i].end)
     }
 
-    pub(crate) fn to_sparse(&self, features: &[usize]) -> SparseFeatureSpace {
-        SparseFeatureSpace(
-            features
-                .iter()
-                .copied()
-                .map(|i| (i, self.0[i].clone()))
-                .collect(),
-        )
+    pub fn to_sparse(&self, features: impl Iterator<Item = usize>) -> SparseFeatureSpace {
+        SparseFeatureSpace(features.map(|i| (i, self.0[i].clone())).collect())
+    }
+
+    pub fn size(&self) -> f64 {
+        self.0.iter().map(|r| r.end - r.start).product()
+    }
+
+    pub fn marginal_size(&self, fixed: &SparseFeatureSpace) -> f64 {
+        self.0
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| fixed.iter().find(|(j, _)| i == j).is_none())
+            .map(|(_, s)| s.end - s.start)
+            .product()
     }
 }
 
