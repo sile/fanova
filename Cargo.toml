@@ -2,13 +2,22 @@
 name = "fanova"
 version = "0.1.0"
 authors = ["Takeru Ohta <phjgt308@gmail.com>"]
+description = "A Rust implementation of fANOVA (functional analysis of variance)"
+homepage = "https://github.com/sile/fanova"
+repository = "https://github.com/sile/fanova"
+readme = "README.md"
+categories = ["science"]
+license = "MIT"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[badges]
+coveralls = {repository = "sile/fanova"}
+
 [dependencies]
 itertools = "0.9"
-ordered-float = "1"
+ordered-float = "2"
 rand = "0.7"
 rayon = "1"
 thiserror = "1"
