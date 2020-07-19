@@ -14,7 +14,7 @@ fANOVA provides a way to calculate feature importance.
 Examples
 --------
 
-```
+```rust
 use fanova::{FanovaOptions, RandomForestOptions};
 use rand::{Rng, SeedableRng};
 
