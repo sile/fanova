@@ -16,6 +16,11 @@ pub struct RandomForestOptions {
 }
 
 impl RandomForestOptions {
+    pub fn trees(mut self, trees: NonZeroUsize) -> Self {
+        self.trees = trees;
+        self
+    }
+
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
@@ -73,9 +78,12 @@ impl RandomForestRegressor {
     }
 
     fn decide_max_features(table: &Table, options: &RandomForestOptions) -> usize {
+        // options
+        //     .max_features
+        //     .unwrap_or_else(|| (table.features_len() as f64 / 3.0).ceil() as usize)
         options
             .max_features
-            .unwrap_or_else(|| (table.features_len() as f64 / 3.0).ceil() as usize)
+            .unwrap_or_else(|| (table.features_len() as f64).sqrt().ceil() as usize)
     }
 
     fn tree_fit<R: Rng + ?Sized>(
@@ -134,11 +142,11 @@ mod tests {
         let regressor = RandomForestRegressor::fit(table, options);
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
-            42.211999999999996
+            41.9785
         );
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
-            43.564333333333344
+            43.50333333333333
         );
 
         Ok(())

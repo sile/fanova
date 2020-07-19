@@ -39,7 +39,7 @@ impl FeatureSpace {
     }
 
     pub fn size(&self) -> f64 {
-        self.0.iter().map(|r| r.end - r.start).sum()
+        self.0.iter().map(|r| r.end - r.start).product()
     }
 
     pub fn ranges(&self) -> &[Range<f64>] {
@@ -88,7 +88,7 @@ impl SparseFeatureSpace {
     }
 
     pub fn size(&self) -> f64 {
-        self.0.iter().map(|(_, r)| r.end - r.start).sum()
+        self.0.iter().map(|(_, r)| r.end - r.start).product()
     }
 
     pub fn iter<'a>(&'a self) -> impl 'a + Iterator<Item = (usize, Range<f64>)> {

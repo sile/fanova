@@ -3,6 +3,9 @@ use crate::table::Table;
 use rand::seq::SliceRandom as _;
 use rand::Rng;
 
+const MIN_SAMPLES_SPLIT: usize = 2;
+const MAX_DEPTH: usize = 64;
+
 #[derive(Debug, Clone, Default)]
 pub struct DecisionTreeOptions {
     pub max_features: Option<usize>,
@@ -70,7 +73,7 @@ impl Tree {
     ) -> Self {
         let max_features = options.max_features.unwrap_or_else(|| table.features_len());
         let mut builder = NodeBuilder { rng, max_features };
-        let root = builder.build(&mut table);
+        let root = builder.build(&mut table, 1);
         Self { root }
     }
 
@@ -122,7 +125,12 @@ struct NodeBuilder<R> {
 }
 
 impl<R: Rng> NodeBuilder<R> {
-    fn build(&mut self, table: &mut Table) -> Node {
+    fn build(&mut self, table: &mut Table, depth: usize) -> Node {
+        if table.rows_len() < MIN_SAMPLES_SPLIT || depth > MAX_DEPTH {
+            let value = functions::mean(table.target());
+            return Node::Leaf { value };
+        }
+
         let impurity = functions::mse(table.target());
         let valid_columns = (0..table.features_len())
             .filter(|&i| !table.column(i).any(|f| f.is_nan()))
@@ -148,7 +156,7 @@ impl<R: Rng> NodeBuilder<R> {
         }
 
         if let Some(split) = best_split {
-            let children = self.build_children(table, split);
+            let children = self.build_children(table, split, depth);
             Node::Internal { children }
         } else {
             let value = functions::mean(table.target());
@@ -156,13 +164,14 @@ impl<R: Rng> NodeBuilder<R> {
         }
     }
 
-    fn build_children(&mut self, table: &mut Table, split: SplitPoint) -> Children {
+    fn build_children(&mut self, table: &mut Table, split: SplitPoint, depth: usize) -> Children {
         table.sort_rows_by_column(split.column);
         let split_row = table
             .column(split.column)
             .take_while(|&f| f <= split.threshold)
             .count();
-        let (left, right) = table.with_split(split_row, |table| Box::new(self.build(table)));
+        let (left, right) =
+            table.with_split(split_row, |table| Box::new(self.build(table, depth + 1)));
         Children { split, left, right }
     }
 }

@@ -145,7 +145,7 @@ impl Fanova {
 
     pub fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> {
         let features = self.feature_space.ranges().len();
-        (1..k).flat_map(move |k| (0..features).combinations(k))
+        (1..=k).flat_map(move |k| (0..features).combinations(k))
     }
 
     fn calc_effect(
@@ -184,8 +184,7 @@ impl Fanova {
             .map(SparseFeatureSpace::new)
             .map(|subspace| {
                 let effect = self.calc_effect(&subspace, &partitioning, mean);
-                let size = subspace.iter().map(|(_, s)| s.end - s.start).sum::<f64>();
-                effect.powi(2) * size
+                effect.powi(2) * subspace.size() as f64
             })
             .sum::<f64>();
 
@@ -327,7 +326,50 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             importances,
-            vec![0.07494272462611684, 0.21624059854672317, 0.4984434619090953]
+            vec![0.02744461966313835, 0.2299188376928614, 0.6288784011550144]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn quantify_importance_k2_works() -> anyhow::Result<()> {
+        let mut feature1 = Vec::new();
+        let mut feature2 = Vec::new();
+        let mut feature3 = Vec::new();
+        let mut target = Vec::new();
+
+        let mut rng = StdRng::from_seed([0u8; 32]);
+        for _ in 0..100 {
+            let f1 = rng.gen();
+            let f2 = rng.gen();
+            let f3 = rng.gen();
+            let t = f1 / 100.0 + (f2 - 0.5) * (f3 - 0.5);
+
+            feature1.push(f1);
+            feature2.push(f2);
+            feature3.push(f3);
+            target.push(t);
+        }
+
+        let fanova = FanovaOptions::default()
+            .random_forest(RandomForestOptions::default().seed(0))
+            .parallel()
+            .fit(vec![&feature1, &feature2, &feature3], &target)?;
+        let importances = fanova
+            .feature_combinations(2)
+            .map(|i| fanova.quantify_importance(&i).mean)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            importances,
+            vec![
+                0.08594444775918132,
+                0.13762622244474054,
+                0.1436884807101818,
+                0.0970577365624792,
+                0.0766824385057356,
+                0.4098183710868284
+            ]
         );
 
         Ok(())
