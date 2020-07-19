@@ -238,17 +238,17 @@ fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> impl Iterator<Item
 }
 
 fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut p: Range<f64>) {
-    if p.start == p.end {
+    if (p.start - p.end).abs() < std::f64::EPSILON {
         return;
     }
 
     if let Some(mut q) = subspaces
         .range(..=OrderedFloat(p.start))
         .rev()
-        .nth(0)
+        .next()
         .map(|(_, q)| q.clone())
     {
-        if q.start == p.start {
+        if (q.start - p.start).abs() < std::f64::EPSILON {
             if q.end > p.end {
                 subspaces.remove(&OrderedFloat(q.start));
 
