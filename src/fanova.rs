@@ -36,8 +36,8 @@ impl FanovaOptions {
         self
     }
 
-    pub fn parallel(mut self, enabled: bool) -> Self {
-        self.parallel = enabled;
+    pub fn parallel(mut self) -> Self {
+        self.parallel = true;
         self
     }
 
@@ -54,6 +54,7 @@ impl FanovaOptions {
     pub fn fit(mut self, features: Vec<&[f64]>, target: &[f64]) -> Result<Fanova, FitError> {
         let mut columns = features;
         let mut target = Cow::Borrowed(target);
+
         if self.target_cutoff.start != std::f64::NEG_INFINITY
             || self.target_cutoff.end != std::f64::INFINITY
         {
@@ -163,6 +164,7 @@ impl Fanova {
     }
 
     fn quantify_importance_tree(&self, tree: &DecisionTreeRegressor, features: &[usize]) -> f64 {
+        // TODO: out-of-range check
         let partitioning = TreePartitions::new(tree, self.feature_space.clone());
         let (mean, total_variance) = partitioning.mean_and_variance();
 
@@ -192,7 +194,7 @@ impl Fanova {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Importance {
     pub mean: f64,
     pub stddev: f64,
@@ -288,5 +290,46 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
         }
     } else {
         subspaces.insert(OrderedFloat(p.start), p);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    #[test]
+    fn quantify_importance_k1_works() -> anyhow::Result<()> {
+        let mut feature1 = Vec::new();
+        let mut feature2 = Vec::new();
+        let mut feature3 = Vec::new();
+        let mut target = Vec::new();
+
+        let mut rng = StdRng::from_seed([0u8; 32]);
+        for _ in 0..100 {
+            let f1 = rng.gen();
+            let f2 = rng.gen();
+            let f3 = rng.gen();
+            let t = f1 + f2 * 2.0 + f3 * 3.0;
+
+            feature1.push(f1);
+            feature2.push(f2);
+            feature3.push(f3);
+            target.push(t);
+        }
+
+        let fanova = FanovaOptions::default()
+            .random_forest(RandomForestOptions::default().seed(0))
+            .fit(vec![&feature1, &feature2, &feature3], &target)?;
+        let importances = (0..3)
+            .map(|i| fanova.quantify_importance(&[i]).mean)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            importances,
+            vec![0.07494272462611684, 0.21624059854672317, 0.4984434619090953]
+        );
+
+        Ok(())
     }
 }

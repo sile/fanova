@@ -9,9 +9,17 @@ use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone)]
 pub struct RandomForestOptions {
+    // TODO: Make these fields private.
     pub trees: NonZeroUsize,
     pub max_features: Option<usize>,
     pub seed: Option<u64>,
+}
+
+impl RandomForestOptions {
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = Some(seed);
+        self
+    }
 }
 
 impl Default for RandomForestOptions {
@@ -95,7 +103,6 @@ impl RandomForestRegressor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{self, SeedableRng};
 
     #[test]
     fn regression_works() -> Result<(), anyhow::Error> {
@@ -122,15 +129,16 @@ mod tests {
 
         let table = Table::new(columns.iter().map(|f| &f[..train_len]).collect())?;
 
-        let mut rng = rand::rngs::StdRng::from_seed(Default::default());
-        let regressor = RandomForestRegressor::fit(&mut rng, table, Default::default());
+        let mut options = RandomForestOptions::default();
+        options.seed = Some(0);
+        let regressor = RandomForestRegressor::fit(table, options);
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
-            41.92138095238095
+            42.211999999999996
         );
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
-            45.140666666666675
+            43.564333333333344
         );
 
         Ok(())

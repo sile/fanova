@@ -1,6 +1,6 @@
-pub use fanova::{Fanova, FanovaOptions};
-pub use random_forest::RandomForestOptions;
-pub use space::{FeatureSpace, FeatureSpaceError};
+pub use self::fanova::{Fanova, FanovaOptions, FitError, Importance};
+pub use self::random_forest::RandomForestOptions;
+pub use self::space::{FeatureSpace, FeatureSpaceError};
 
 mod decision_tree;
 mod fanova;

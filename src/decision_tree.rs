@@ -24,7 +24,7 @@ impl DecisionTreeRegressor {
     }
 
     #[cfg(test)]
-    fn predict(&self, xs: &[f64]) -> f64 {
+    pub fn predict(&self, xs: &[f64]) -> f64 {
         self.tree.predict(xs)
     }
 
