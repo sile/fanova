@@ -2,7 +2,7 @@ use crate::decision_tree::DecisionTreeRegressor;
 use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
-use crate::space::{FeatureSpace, SparseFeatureSpace};
+use crate::space::FeatureSpace;
 use crate::table::{Table, TableError};
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -152,16 +152,46 @@ impl Fanova {
         Importance { mean, stddev }
     }
 
+    /// Clears the internal cache.
+    pub fn clear(&mut self) {
+        for t in &mut self.trees {
+            t.clear();
+        }
+    }
+
     #[cfg(test)]
     fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> {
         let features = self.feature_space.ranges().len();
         (1..=k).flat_map(move |k| (0..features).combinations(k))
     }
 
-    /// Clears the internal cache.
-    pub fn clear(&mut self) {
-        for t in &mut self.trees {
-            t.clear();
+    fn traverse_covered_subspaces<F>(
+        &self,
+        marginal_value_index: usize,
+        partition: &crate::partition::Partition,
+        feature_subspaces: &[(usize, Vec<Range<f64>>)],
+        f: &mut F,
+    ) where
+        F: FnMut(usize),
+    {
+        if feature_subspaces.is_empty() {
+            f(marginal_value_index);
+            return;
+        }
+
+        let (feature, subspaces) = &feature_subspaces[0];
+        let range = partition.space.ranges()[*feature].clone();
+        let start = subspaces
+            .binary_search_by_key(&OrderedFloat(range.start), |x| OrderedFloat(x.start))
+            .unwrap_or_else(|index| index);
+
+        for i in (start..subspaces.len()).take_while(|&i| subspaces[i].end <= range.end) {
+            self.traverse_covered_subspaces(
+                marginal_value_index * subspaces.len() + i,
+                partition,
+                &feature_subspaces[1..],
+                f,
+            );
         }
     }
 
@@ -170,27 +200,42 @@ impl Fanova {
             return importance;
         }
 
-        let variance = features
+        let feature_subspaces = features
             .iter()
             .copied()
             .map(|i| {
-                subspaces(tree.partitions.iter().map(|p| p.space.ranges()[i].clone()))
-                    .map(|space| (i, space))
-                    .collect::<Vec<_>>()
+                let subspaces =
+                    subspaces(tree.partitions.iter().map(|p| p.space.ranges()[i].clone()));
+                (i, subspaces)
             })
-            .multi_cartesian_product()
-            .map(SparseFeatureSpace::new)
-            .map(|subspace| {
-                let variance = tree.partitions.marginal_predict(&subspace) - tree.mean;
-                let weight = subspace.size() as f64;
-                variance.powi(2) * weight
-            })
-            .sum::<f64>();
+            .collect::<Vec<_>>();
 
-        let size = self
-            .feature_space
-            .to_sparse(features.iter().copied())
-            .size();
+        let overall_marginal_size = self.feature_space.marginal_size(features);
+        let mut marginal_values =
+            vec![0.0; feature_subspaces.iter().map(|(_, s)| s.len()).product()];
+
+        for p in tree.partitions.iter() {
+            let partition_marginal_size = p.space.marginal_size(features);
+            let weighted_value = p.value * (partition_marginal_size / overall_marginal_size);
+
+            self.traverse_covered_subspaces(0, p, &feature_subspaces, &mut |index| {
+                marginal_values[index] += weighted_value
+            });
+        }
+
+        let mut variance = 0.0;
+        for (mut i, v) in marginal_values.into_iter().enumerate() {
+            let mut weight = 1.0;
+            for (_, subspaces) in feature_subspaces.iter().rev() {
+                let j = i % subspaces.len();
+                i /= subspaces.len();
+                weight *= subspaces[j].end - subspaces[j].start;
+            }
+
+            variance += (v - tree.mean).powi(2) * weight;
+        }
+
+        let size = self.feature_space.partial_size(features);
         let mut importance = variance / size / tree.variance;
         for k in 1..features.len() {
             for sub_features in features.iter().copied().combinations(k) {
@@ -240,12 +285,12 @@ impl From<TableError> for FitError {
     }
 }
 
-fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> impl Iterator<Item = Range<f64>> {
+fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> Vec<Range<f64>> {
     let mut subspaces = BTreeMap::new();
     for p in partitions {
         insert_subspace(&mut subspaces, p);
     }
-    subspaces.into_iter().map(|(_, v)| v)
+    subspaces.into_iter().map(|(_, v)| v).collect()
 }
 
 fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut p: Range<f64>) {

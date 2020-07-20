@@ -39,43 +39,23 @@ impl FeatureSpace {
         (lower, upper)
     }
 
-    pub fn covers(&self, space: &SparseFeatureSpace) -> bool {
-        space
+    pub fn marginal_size(&self, fixed: &[usize]) -> f64 {
+        self.0
             .iter()
-            .all(|(i, r)| self.0[i].start <= r.start && r.end <= self.0[i].end)
+            .enumerate()
+            .filter(|(i, _)| !fixed.contains(i))
+            .map(|(_, r)| r.end - r.start)
+            .product()
     }
 
-    pub fn to_sparse(&self, features: impl Iterator<Item = usize>) -> SparseFeatureSpace {
-        SparseFeatureSpace(features.map(|i| (i, self.0[i].clone())).collect())
+    pub fn partial_size(&self, features: &[usize]) -> f64 {
+        features
+            .iter()
+            .map(|&i| self.0[i].end - self.0[i].start)
+            .product()
     }
 
     pub fn size(&self) -> f64 {
         self.0.iter().map(|r| r.end - r.start).product()
-    }
-
-    pub fn marginal_size(&self, fixed: &SparseFeatureSpace) -> f64 {
-        self.0
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| fixed.iter().find(|(j, _)| i == j).is_none())
-            .map(|(_, s)| s.end - s.start)
-            .product()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SparseFeatureSpace(Vec<(usize, Range<f64>)>);
-
-impl SparseFeatureSpace {
-    pub fn new(space: Vec<(usize, Range<f64>)>) -> Self {
-        Self(space)
-    }
-
-    pub fn size(&self) -> f64 {
-        self.0.iter().map(|(_, r)| r.end - r.start).product()
-    }
-
-    pub fn iter<'a>(&'a self) -> impl 'a + Iterator<Item = (usize, Range<f64>)> {
-        self.0.iter().map(|x| (x.0, x.1.clone()))
     }
 }

@@ -1,5 +1,5 @@
 use crate::decision_tree::DecisionTreeRegressor;
-use crate::space::{FeatureSpace, SparseFeatureSpace};
+use crate::space::FeatureSpace;
 
 #[derive(Debug)]
 pub struct Partition {
@@ -25,18 +25,6 @@ impl TreePartitions {
             },
         );
         Self { partitions, space }
-    }
-
-    pub fn marginal_predict(&self, fixed_space: &SparseFeatureSpace) -> f64 {
-        let overall_size = self.space.marginal_size(fixed_space);
-        self.partitions
-            .iter()
-            .filter(|p| p.space.covers(&fixed_space))
-            .map(|p| {
-                let size = p.space.marginal_size(fixed_space);
-                (size / overall_size) * p.value
-            })
-            .sum()
     }
 
     pub fn mean_and_variance(&self) -> (f64, f64) {
