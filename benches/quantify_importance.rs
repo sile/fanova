@@ -20,10 +20,12 @@ fn k1(c: &mut Criterion) {
         target.push(t);
     }
 
+    let mut fanova = Fanova::fit(vec![&feature1, &feature2, &feature3], &target).unwrap();
+
     c.bench_function("k=1, features=3, n=100", |b| {
         b.iter(|| {
-            let mut fanova = Fanova::fit(vec![&feature1, &feature2, &feature3], &target).unwrap();
             for i in 0..3 {
+                fanova.clear();
                 fanova.quantify_importance(&[i]);
             }
         })
@@ -48,9 +50,11 @@ fn k2(c: &mut Criterion) {
         target.push(t);
     }
 
+    let mut fanova = Fanova::fit(vec![&feature1, &feature2, &feature3], &target).unwrap();
+
     c.bench_function("k=1, features=3, n=100", |b| {
         b.iter(|| {
-            let mut fanova = Fanova::fit(vec![&feature1, &feature2, &feature3], &target).unwrap();
+            fanova.clear();
             for i in &[
                 &[0][..],
                 &[1][..],

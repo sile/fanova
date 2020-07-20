@@ -100,6 +100,10 @@ impl Tree {
             importances: BTreeMap::new(),
         }
     }
+
+    fn clear(&mut self) {
+        self.importances.clear();
+    }
 }
 
 /// fANOVA object.
@@ -152,6 +156,13 @@ impl Fanova {
     fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> {
         let features = self.feature_space.ranges().len();
         (1..=k).flat_map(move |k| (0..features).combinations(k))
+    }
+
+    /// Clears the internal cache.
+    pub fn clear(&mut self) {
+        for t in &mut self.trees {
+            t.clear();
+        }
     }
 
     fn quantify_importance_tree(&self, tree: &mut Tree, features: &[usize]) -> f64 {
