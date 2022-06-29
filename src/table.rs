@@ -35,11 +35,11 @@ impl<'a> Table<'a> {
         })
     }
 
-    pub fn target<'b>(&'b self) -> impl 'b + Iterator<Item = f64> + Clone {
+    pub fn target(&self) -> impl '_ + Iterator<Item = f64> + Clone {
         self.column(self.columns.len() - 1)
     }
 
-    pub fn column<'b>(&'b self, column_index: usize) -> impl 'b + Iterator<Item = f64> + Clone {
+    pub fn column(&self, column_index: usize) -> impl '_ + Iterator<Item = f64> + Clone {
         self.rows().map(move |i| self.columns[column_index][i])
     }
 
@@ -51,7 +51,7 @@ impl<'a> Table<'a> {
         self.row_range.end - self.row_range.start
     }
 
-    fn rows<'b>(&'b self) -> impl 'b + Iterator<Item = usize> + Clone {
+    fn rows(&self) -> impl '_ + Iterator<Item = usize> + Clone {
         self.row_index[self.row_range.start..self.row_range.end]
             .iter()
             .copied()
@@ -78,7 +78,7 @@ impl<'a> Table<'a> {
         }
     }
 
-    pub fn thresholds<'b>(&'b self, column: usize) -> impl 'b + Iterator<Item = (usize, f64)> {
+    pub fn thresholds(&self, column: usize) -> impl '_ + Iterator<Item = (usize, f64)> {
         // Assumption: `self.columns[column]` has been sorted.
         let column = self.columns[column];
         self.rows()
@@ -96,7 +96,7 @@ impl<'a> Table<'a> {
                     Some(None)
                 }
             })
-            .filter_map(|t| t)
+            .flatten()
     }
 
     pub fn with_split<F, T>(&mut self, row: usize, mut f: F) -> (T, T)

@@ -12,7 +12,7 @@ use std::ops::Range;
 use thiserror::Error;
 
 /// fANOVA options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FanovaOptions {
     random_forest: RandomForestOptions,
     parallel: bool,
@@ -72,15 +72,6 @@ impl FanovaOptions {
     }
 }
 
-impl Default for FanovaOptions {
-    fn default() -> Self {
-        Self {
-            random_forest: RandomForestOptions::default(),
-            parallel: false,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct Tree {
     partitions: TreePartitions,
@@ -134,7 +125,7 @@ impl Fanova {
             };
         }
 
-        let mut trees = std::mem::replace(&mut self.trees, Vec::new());
+        let mut trees = std::mem::take(&mut self.trees);
         let importances = if self.parallel {
             trees
                 .par_iter_mut()
