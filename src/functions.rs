@@ -12,7 +12,7 @@ pub fn mean_and_stddev(xs: impl Iterator<Item = f64>) -> (f64, f64) {
     }
     assert!(n >= 0.0, "Need at least one value");
     if n == 1.0 {
-        (mean, f64::NAN)
+        (mean, 0.0)
     } else {
         (mean, (s / (n - 1.0)).sqrt())
     }
