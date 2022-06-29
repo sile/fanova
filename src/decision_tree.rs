@@ -17,11 +17,7 @@ pub struct DecisionTreeRegressor {
 }
 
 impl DecisionTreeRegressor {
-    pub fn fit<R: Rng + ?Sized>(
-        rng: &mut R,
-        table: Table,
-        options: DecisionTreeOptions,
-    ) -> Self {
+    pub fn fit<R: Rng + ?Sized>(rng: &mut R, table: Table, options: DecisionTreeOptions) -> Self {
         let tree = Tree::fit(rng, table, options);
         Self { tree }
     }
