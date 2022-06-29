@@ -160,11 +160,11 @@ mod tests {
         let regressor = RandomForestRegressor::fit(table, options);
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
-            41.9785
+            41.97850000000002
         );
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
-            43.50333333333333
+            43.79333333333333
         );
 
         Ok(())
