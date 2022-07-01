@@ -18,7 +18,7 @@ coveralls = {repository = "sile/fanova"}
 [dependencies]
 itertools = "0.9"
 ordered-float = "2"
-rand = "0.7"
+rand = "0.8"
 rayon = "1"
 thiserror = "1"
 

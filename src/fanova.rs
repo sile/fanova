@@ -353,7 +353,7 @@ mod tests {
         let mut feature3 = Vec::new();
         let mut target = Vec::new();
 
-        let mut rng = StdRng::from_seed([0u8; 32]);
+        let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
             let f1 = rng.gen();
             let f2 = rng.gen();
@@ -374,7 +374,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             importances,
-            vec![0.02679376924761657, 0.23082014202808318, 0.6286088147550026]
+            vec![0.04285945139294453, 0.23639697156594727, 0.5975522202656363]
         );
 
         Ok(())
@@ -387,7 +387,7 @@ mod tests {
         let mut feature3 = Vec::new();
         let mut target = Vec::new();
 
-        let mut rng = StdRng::from_seed([0u8; 32]);
+         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
             let f1 = rng.gen();
             let f2 = rng.gen();
@@ -411,12 +411,12 @@ mod tests {
         assert_eq!(
             importances,
             vec![
-                0.08585356080800069,
-                0.13508849452431995,
-                0.14405650163377262,
-                0.09754564945476292,
-                0.07655501887575389,
-                0.41144699174418653
+                0.07680860824384894,
+                0.22398368444798653,
+                0.19379724508736923,
+                0.07470334097342736,
+                0.060765985323840255,
+                0.3294309902816728
             ]
         );
 
