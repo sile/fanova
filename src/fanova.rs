@@ -12,7 +12,7 @@ use std::ops::Range;
 use thiserror::Error;
 
 /// fANOVA options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FanovaOptions {
     random_forest: RandomForestOptions,
     parallel: bool,
@@ -72,15 +72,6 @@ impl FanovaOptions {
     }
 }
 
-impl Default for FanovaOptions {
-    fn default() -> Self {
-        Self {
-            random_forest: RandomForestOptions::default(),
-            parallel: false,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct Tree {
     partitions: TreePartitions,
@@ -134,7 +125,7 @@ impl Fanova {
             };
         }
 
-        let mut trees = std::mem::replace(&mut self.trees, Vec::new());
+        let mut trees = std::mem::take(&mut self.trees);
         let importances = if self.parallel {
             trees
                 .par_iter_mut()
@@ -383,7 +374,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             importances,
-            vec![0.02744461966313835, 0.22991883769286145, 0.6288784011550144]
+            vec![0.02679376924761657, 0.23082014202808318, 0.6286088147550026]
         );
 
         Ok(())
@@ -420,12 +411,12 @@ mod tests {
         assert_eq!(
             importances,
             vec![
-                0.08594444775918131,
-                0.13762622244474054,
-                0.1436884807101818,
-                0.0970577365624792,
-                0.07668243850573553,
-                0.40981837108682856
+                0.08585356080800069,
+                0.13508849452431995,
+                0.14405650163377262,
+                0.09754564945476292,
+                0.07655501887575389,
+                0.41144699174418653
             ]
         );
 

@@ -17,11 +17,7 @@ pub struct DecisionTreeRegressor {
 }
 
 impl DecisionTreeRegressor {
-    pub fn fit<'a, R: Rng + ?Sized>(
-        rng: &mut R,
-        table: Table<'a>,
-        options: DecisionTreeOptions,
-    ) -> Self {
+    pub fn fit<R: Rng + ?Sized>(rng: &mut R, table: Table, options: DecisionTreeOptions) -> Self {
         let tree = Tree::fit(rng, table, options);
         Self { tree }
     }
@@ -66,9 +62,9 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn fit<'a, R: Rng + ?Sized>(
+    pub fn fit<R: Rng + ?Sized>(
         rng: &mut R,
-        mut table: Table<'a>,
+        mut table: Table,
         options: DecisionTreeOptions,
     ) -> Self {
         let max_features = options.max_features.unwrap_or_else(|| table.features_len());
