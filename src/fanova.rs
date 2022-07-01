@@ -387,7 +387,7 @@ mod tests {
         let mut feature3 = Vec::new();
         let mut target = Vec::new();
 
-         let mut rng = StdRng::seed_from_u64(0);
+        let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
             let f1 = rng.gen();
             let f2 = rng.gen();
