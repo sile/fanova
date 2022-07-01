@@ -65,7 +65,7 @@ impl<'a> Table<'a> {
 
     pub fn bootstrap_sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         let row_index = (0..self.rows_len())
-            .map(|_| self.row_index[rng.gen_range(self.row_range.start, self.row_range.end)])
+            .map(|_| self.row_index[rng.gen_range(self.row_range.start..self.row_range.end)])
             .collect::<Vec<_>>();
         let row_range = Range {
             start: 0,

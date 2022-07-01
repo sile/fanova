@@ -58,15 +58,9 @@ impl Default for RandomForestOptions {
 
 impl RandomForestOptions {
     fn tree_rngs(&self) -> impl Iterator<Item = StdRng> {
-        let seed_u64 = self.seed.unwrap_or_else(|| rand::thread_rng().gen());
-        let mut seed = [0u8; 32];
-        (&mut seed[0..8]).copy_from_slice(&seed_u64.to_be_bytes()[..]);
-        let mut rng = StdRng::from_seed(seed);
-        (0..self.trees.get()).map(move |_| {
-            let mut seed = [0u8; 32];
-            rng.fill(&mut seed);
-            StdRng::from_seed(seed)
-        })
+        let seed = self.seed.unwrap_or_else(|| rand::thread_rng().gen());
+        let mut rng = StdRng::seed_from_u64(seed);
+        (0..self.trees.get()).map(move |_| StdRng::seed_from_u64(rng.gen()))
     }
 }
 
@@ -160,11 +154,11 @@ mod tests {
         let regressor = RandomForestRegressor::fit(table, options);
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
-            41.97850000000002
+            41.063500000000005
         );
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
-            43.79333333333333
+            44.425000000000004
         );
 
         Ok(())

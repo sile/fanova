@@ -13,7 +13,7 @@
 //! let mut feature3 = Vec::new();
 //! let mut target = Vec::new();
 //!
-//! let mut rng = rand::rngs::StdRng::from_seed([0u8; 32]);
+//! let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 //! for _ in 0..100 {
 //!     let f1 = rng.gen();
 //!     let f2 = rng.gen();
@@ -35,7 +35,7 @@
 //!
 //! assert_eq!(
 //!     importances,
-//!     vec![0.02679376924761657, 0.23082014202808318, 0.6286088147550026]
+//!     vec![0.04285945139294453, 0.23639697156594727, 0.5975522202656363]
 //! );
 //! ```
 //!
