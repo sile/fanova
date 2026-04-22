@@ -5,7 +5,9 @@ use fanova::Fanova;
 use std::time::Instant;
 
 fn make_fanova(n_features: usize, n_rows: usize) -> Fanova {
-    let mut features: Vec<Vec<f64>> = (0..n_features).map(|_| Vec::with_capacity(n_rows)).collect();
+    let mut features: Vec<Vec<f64>> = (0..n_features)
+        .map(|_| Vec::with_capacity(n_rows))
+        .collect();
     let mut target = Vec::with_capacity(n_rows);
     for _ in 0..n_rows {
         let mut t = 0.0;
