@@ -188,32 +188,38 @@ impl Fanova {
         (1..=k).flat_map(move |k| combinations(0..features, k))
     }
 
-    fn traverse_covered_subspaces<F>(
-        &self,
+    fn traverse_covered_subspaces(
         marginal_value_index: usize,
         partition: &crate::partition::Partition,
         feature_subspaces: &[(usize, &Vec<Range<f64>>)],
-        f: &mut F,
-    ) where
-        F: FnMut(usize),
-    {
+        marginal_values: &mut [f64],
+        weighted_value: f64,
+    ) {
         if feature_subspaces.is_empty() {
-            f(marginal_value_index);
+            marginal_values[marginal_value_index] += weighted_value;
             return;
         }
 
-        let (feature, subspaces) = &feature_subspaces[0];
-        let range = partition.space.ranges()[*feature].clone();
-        let start = subspaces
-            .binary_search_by(|x| x.start.total_cmp(&range.start))
-            .unwrap_or_else(|index| index);
+        let (feature, subspaces) = feature_subspaces[0];
+        let range = &partition.space.ranges()[feature];
+        let (start, end) = subspace_range(subspaces, range);
 
-        for i in (start..subspaces.len()).take_while(|&i| subspaces[i].end <= range.end) {
-            self.traverse_covered_subspaces(
+        if feature_subspaces.len() == 1 {
+            for v in &mut marginal_values
+                [marginal_value_index * subspaces.len() + start..marginal_value_index * subspaces.len() + end]
+            {
+                *v += weighted_value;
+            }
+            return;
+        }
+
+        for i in start..end {
+            Self::traverse_covered_subspaces(
                 marginal_value_index * subspaces.len() + i,
                 partition,
                 &feature_subspaces[1..],
-                f,
+                marginal_values,
+                weighted_value,
             );
         }
     }
@@ -236,10 +242,13 @@ impl Fanova {
         for p in tree.partitions.iter() {
             let partition_marginal_size = p.space.marginal_size(features);
             let weighted_value = p.value * (partition_marginal_size / overall_marginal_size);
-
-            self.traverse_covered_subspaces(0, p, &feature_subspaces, &mut |index| {
-                marginal_values[index] += weighted_value
-            });
+            Self::traverse_covered_subspaces(
+                0,
+                p,
+                &feature_subspaces,
+                &mut marginal_values,
+                weighted_value,
+            );
         }
 
         let mut variance = 0.0;
@@ -314,6 +323,17 @@ impl From<TableError> for FitError {
             TableError::RowSizeMismatch => Self::RowSizeMismatch,
         }
     }
+}
+
+fn subspace_range(subspaces: &[Range<f64>], partition_range: &Range<f64>) -> (usize, usize) {
+    let start = subspaces
+        .binary_search_by(|x| x.start.total_cmp(&partition_range.start))
+        .unwrap_or_else(|i| i);
+    let mut end = start;
+    while end < subspaces.len() && subspaces[end].end <= partition_range.end {
+        end += 1;
+    }
+    (start, end)
 }
 
 fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> Vec<Range<f64>> {
