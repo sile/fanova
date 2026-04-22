@@ -1,6 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use fanova::Fanova;
-use rand;
 
 fn k1(c: &mut Criterion) {
     let mut feature1 = Vec::new();

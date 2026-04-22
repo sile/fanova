@@ -9,7 +9,6 @@ use ordered_float::OrderedFloat;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::BTreeMap;
 use std::ops::Range;
-use thiserror::Error;
 
 /// fANOVA options.
 #[derive(Debug, Clone, Default)]
@@ -251,20 +250,32 @@ pub struct Importance {
 
 /// Possible errors which could be returned by `Fanove::fit` method.
 #[non_exhaustive]
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FitError {
     /// Features and target must have one or more rows.
-    #[error("features and target must have one or more rows")]
     EmptyRows,
 
     /// Some of features or target have a different row count from others.
-    #[error("some of features or target have a different row count from others")]
     RowSizeMismatch,
 
     /// Target contains non finite numbers.
-    #[error("target contains non finite numbers")]
     NonFiniteTarget,
 }
+
+impl std::fmt::Display for FitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyRows => write!(f, "features and target must have one or more rows"),
+            Self::RowSizeMismatch => write!(
+                f,
+                "some of features or target have a different row count from others"
+            ),
+            Self::NonFiniteTarget => write!(f, "target contains non finite numbers"),
+        }
+    }
+}
+
+impl std::error::Error for FitError {}
 
 impl From<TableError> for FitError {
     fn from(f: TableError) -> Self {
@@ -343,10 +354,11 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
 mod tests {
     use super::*;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
-    fn quantify_importance_k1_works() -> anyhow::Result<()> {
+    fn quantify_importance_k1_works() -> TestResult {
         let mut feature1 = Vec::new();
         let mut feature2 = Vec::new();
         let mut feature3 = Vec::new();
@@ -354,9 +366,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
-            let f1 = rng.r#gen();
-            let f2 = rng.r#gen();
-            let f3 = rng.r#gen();
+            let f1 = rng.random();
+            let f2 = rng.random();
+            let f3 = rng.random();
             let t = f1 + f2 * 2.0 + f3 * 3.0;
 
             feature1.push(f1);
@@ -373,14 +385,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             importances,
-            vec![0.04285945139294453, 0.23639697156594727, 0.5975522202656363]
+            vec![0.03949614161205558, 0.24001507447005044, 0.5934922097988682]
         );
 
         Ok(())
     }
 
     #[test]
-    fn quantify_importance_k2_works() -> anyhow::Result<()> {
+    fn quantify_importance_k2_works() -> TestResult {
         let mut feature1 = Vec::new();
         let mut feature2 = Vec::new();
         let mut feature3 = Vec::new();
@@ -388,9 +400,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
-            let f1 = rng.r#gen();
-            let f2 = rng.r#gen();
-            let f3 = rng.r#gen();
+            let f1 = rng.random();
+            let f2 = rng.random();
+            let f3 = rng.random();
             let t = f1 / 100.0 + (f2 - 0.5) * (f3 - 0.5);
 
             feature1.push(f1);
@@ -410,12 +422,12 @@ mod tests {
         assert_eq!(
             importances,
             vec![
-                0.07680860824384894,
-                0.22398368444798653,
-                0.19379724508736923,
-                0.07470334097342736,
-                0.060765985323840255,
-                0.3294309902816728
+                0.06743725813997076,
+                0.22594018609277702,
+                0.19671183110117801,
+                0.07562742199761226,
+                0.05954537473187141,
+                0.33055886109798627
             ]
         );
 

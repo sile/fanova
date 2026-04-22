@@ -15,7 +15,7 @@ Examples
 
 ```rust
 use fanova::{FanovaOptions, RandomForestOptions};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 let mut feature1 = Vec::new();
 let mut feature2 = Vec::new();
@@ -24,9 +24,9 @@ let mut target = Vec::new();
 
 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 for _ in 0..100 {
-    let f1 = rng.r#gen();
-    let f2 = rng.r#gen();
-    let f3 = rng.r#gen();
+    let f1 = rng.random();
+    let f2 = rng.random();
+    let f3 = rng.random();
     let t = f1 + f2 * 2.0 + f3 * 3.0;
 
     feature1.push(f1);
@@ -44,7 +44,7 @@ let importances = (0..3)
 
 assert_eq!(
     importances,
-    vec![0.02744461966313835, 0.22991883769286145, 0.6288784011550144]
+    vec![0.03949614161205558, 0.24001507447005044, 0.5934922097988682]
 );
 ```
 
