@@ -6,7 +6,7 @@
 //!
 //! ```
 //! use fanova::{FanovaOptions, RandomForestOptions};
-//! use rand::{Rng, SeedableRng};
+//! use rand::{RngExt, SeedableRng};
 //!
 //! let mut feature1 = Vec::new();
 //! let mut feature2 = Vec::new();
@@ -15,9 +15,9 @@
 //!
 //! let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 //! for _ in 0..100 {
-//!     let f1 = rng.r#gen();
-//!     let f2 = rng.r#gen();
-//!     let f3 = rng.r#gen();
+//!     let f1 = rng.random();
+//!     let f2 = rng.random();
+//!     let f3 = rng.random();
 //!     let t = f1 + f2 * 2.0 + f3 * 3.0;
 //!
 //!     feature1.push(f1);
@@ -35,7 +35,7 @@
 //!
 //! assert_eq!(
 //!     importances,
-//!     vec![0.04285945139294453, 0.23639697156594727, 0.5975522202656363]
+//!     vec![0.03949614161205558, 0.24001507447005044, 0.5934922097988682]
 //! );
 //! ```
 //!
@@ -49,6 +49,7 @@
 pub use self::fanova::{Fanova, FanovaOptions, FitError, Importance};
 pub use self::random_forest::RandomForestOptions;
 
+mod combinations;
 mod decision_tree;
 mod fanova;
 mod functions;

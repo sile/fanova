@@ -1,7 +1,5 @@
-use ordered_float::OrderedFloat;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use std::ops::Range;
-use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct Table<'a> {
@@ -60,12 +58,12 @@ impl<'a> Table<'a> {
     pub fn sort_rows_by_column(&mut self, column: usize) {
         let columns = &self.columns;
         self.row_index[self.row_range.start..self.row_range.end]
-            .sort_by_key(|&x| OrderedFloat(columns[column][x]))
+            .sort_by(|&a, &b| columns[column][a].total_cmp(&columns[column][b]))
     }
 
     pub fn bootstrap_sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         let row_index = (0..self.rows_len())
-            .map(|_| self.row_index[rng.gen_range(self.row_range.start..self.row_range.end)])
+            .map(|_| self.row_index[rng.random_range(self.row_range.start..self.row_range.end)])
             .collect::<Vec<_>>();
         let row_range = Range {
             start: 0,
@@ -118,14 +116,23 @@ impl<'a> Table<'a> {
     }
 }
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TableError {
-    #[error("table must have at least one column and one row")]
     EmptyTable,
-
-    #[error("some of columns have a different row count from others")]
     RowSizeMismatch,
-
-    #[error("target column contains non finite numbers")]
     NonFiniteTarget,
 }
+
+impl std::fmt::Display for TableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyTable => write!(f, "table must have at least one column and one row"),
+            Self::RowSizeMismatch => {
+                write!(f, "some of columns have a different row count from others")
+            }
+            Self::NonFiniteTarget => write!(f, "target column contains non finite numbers"),
+        }
+    }
+}
+
+impl std::error::Error for TableError {}

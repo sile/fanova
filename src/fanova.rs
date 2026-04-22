@@ -1,15 +1,37 @@
+use crate::combinations::combinations;
 use crate::decision_tree::DecisionTreeRegressor;
 use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
 use crate::space::FeatureSpace;
 use crate::table::{Table, TableError};
-use itertools::Itertools as _;
-use ordered_float::OrderedFloat;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::ops::Range;
-use thiserror::Error;
+
+#[derive(Debug, Clone, Copy)]
+struct TotalF64(f64);
+
+impl PartialEq for TotalF64 {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.total_cmp(&other.0).is_eq()
+    }
+}
+
+impl Eq for TotalF64 {}
+
+impl PartialOrd for TotalF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TotalF64 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
 
 /// fANOVA options.
 #[derive(Debug, Clone, Default)]
@@ -153,7 +175,7 @@ impl Fanova {
     #[cfg(test)]
     fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> + use<> {
         let features = self.feature_space.ranges().len();
-        (1..=k).flat_map(move |k| (0..features).combinations(k))
+        (1..=k).flat_map(move |k| combinations(0..features, k))
     }
 
     fn traverse_covered_subspaces<F>(
@@ -173,7 +195,7 @@ impl Fanova {
         let (feature, subspaces) = &feature_subspaces[0];
         let range = partition.space.ranges()[*feature].clone();
         let start = subspaces
-            .binary_search_by_key(&OrderedFloat(range.start), |x| OrderedFloat(x.start))
+            .binary_search_by(|x| x.start.total_cmp(&range.start))
             .unwrap_or_else(|index| index);
 
         for i in (start..subspaces.len()).take_while(|&i| subspaces[i].end <= range.end) {
@@ -229,7 +251,7 @@ impl Fanova {
         let size = self.feature_space.partial_size(features);
         let mut importance = variance / size / tree.variance;
         for k in 1..features.len() {
-            for sub_features in features.iter().copied().combinations(k) {
+            for sub_features in combinations(features.iter().copied(), k) {
                 importance -= self.quantify_importance_tree(tree, &sub_features);
             }
         }
@@ -251,20 +273,32 @@ pub struct Importance {
 
 /// Possible errors which could be returned by `Fanove::fit` method.
 #[non_exhaustive]
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FitError {
     /// Features and target must have one or more rows.
-    #[error("features and target must have one or more rows")]
     EmptyRows,
 
     /// Some of features or target have a different row count from others.
-    #[error("some of features or target have a different row count from others")]
     RowSizeMismatch,
 
     /// Target contains non finite numbers.
-    #[error("target contains non finite numbers")]
     NonFiniteTarget,
 }
+
+impl std::fmt::Display for FitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyRows => write!(f, "features and target must have one or more rows"),
+            Self::RowSizeMismatch => write!(
+                f,
+                "some of features or target have a different row count from others"
+            ),
+            Self::NonFiniteTarget => write!(f, "target contains non finite numbers"),
+        }
+    }
+}
+
+impl std::error::Error for FitError {}
 
 impl From<TableError> for FitError {
     fn from(f: TableError) -> Self {
@@ -284,23 +318,23 @@ fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> Vec<Range<f64>> {
     subspaces.into_values().collect()
 }
 
-fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut p: Range<f64>) {
+fn insert_subspace(subspaces: &mut BTreeMap<TotalF64, Range<f64>>, mut p: Range<f64>) {
     if (p.start - p.end).abs() < f64::EPSILON {
         return;
     }
 
     if let Some(mut q) = subspaces
-        .range(..=OrderedFloat(p.start))
+        .range(..=TotalF64(p.start))
         .next_back()
         .map(|(_, q)| q.clone())
     {
         if (q.start - p.start).abs() < f64::EPSILON {
             if q.end > p.end {
-                subspaces.remove(&OrderedFloat(q.start));
+                subspaces.remove(&TotalF64(q.start));
 
                 q.start = p.end;
-                subspaces.insert(OrderedFloat(p.start), p);
-                subspaces.insert(OrderedFloat(q.start), q);
+                subspaces.insert(TotalF64(p.start), p);
+                subspaces.insert(TotalF64(q.start), q);
             } else {
                 assert!(q.end <= p.end);
                 p.start = q.end;
@@ -309,19 +343,19 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
         } else {
             assert!(q.start < p.start);
             if q.end > p.end {
-                subspaces.remove(&OrderedFloat(q.start));
+                subspaces.remove(&TotalF64(q.start));
 
                 let r = Range {
                     start: p.end,
                     end: q.end,
                 };
                 q.end = p.start;
-                subspaces.insert(OrderedFloat(q.start), q);
-                subspaces.insert(OrderedFloat(p.start), p);
-                subspaces.insert(OrderedFloat(r.start), r);
+                subspaces.insert(TotalF64(q.start), q);
+                subspaces.insert(TotalF64(p.start), p);
+                subspaces.insert(TotalF64(r.start), r);
             } else {
                 assert!(q.end <= p.end);
-                subspaces.remove(&OrderedFloat(q.start));
+                subspaces.remove(&TotalF64(q.start));
 
                 let r = Range {
                     start: q.end,
@@ -329,13 +363,13 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
                 };
                 q.end = p.start;
                 p.end = r.start;
-                subspaces.insert(OrderedFloat(q.start), q);
-                subspaces.insert(OrderedFloat(p.start), p);
+                subspaces.insert(TotalF64(q.start), q);
+                subspaces.insert(TotalF64(p.start), p);
                 insert_subspace(subspaces, r);
             }
         }
     } else {
-        subspaces.insert(OrderedFloat(p.start), p);
+        subspaces.insert(TotalF64(p.start), p);
     }
 }
 
@@ -343,10 +377,11 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
 mod tests {
     use super::*;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
+    type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     #[test]
-    fn quantify_importance_k1_works() -> anyhow::Result<()> {
+    fn quantify_importance_k1_works() -> TestResult {
         let mut feature1 = Vec::new();
         let mut feature2 = Vec::new();
         let mut feature3 = Vec::new();
@@ -354,9 +389,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
-            let f1 = rng.r#gen();
-            let f2 = rng.r#gen();
-            let f3 = rng.r#gen();
+            let f1 = rng.random();
+            let f2 = rng.random();
+            let f3 = rng.random();
             let t = f1 + f2 * 2.0 + f3 * 3.0;
 
             feature1.push(f1);
@@ -373,14 +408,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             importances,
-            vec![0.04285945139294453, 0.23639697156594727, 0.5975522202656363]
+            vec![0.03949614161205558, 0.24001507447005044, 0.5934922097988682]
         );
 
         Ok(())
     }
 
     #[test]
-    fn quantify_importance_k2_works() -> anyhow::Result<()> {
+    fn quantify_importance_k2_works() -> TestResult {
         let mut feature1 = Vec::new();
         let mut feature2 = Vec::new();
         let mut feature3 = Vec::new();
@@ -388,9 +423,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
-            let f1 = rng.r#gen();
-            let f2 = rng.r#gen();
-            let f3 = rng.r#gen();
+            let f1 = rng.random();
+            let f2 = rng.random();
+            let f3 = rng.random();
             let t = f1 / 100.0 + (f2 - 0.5) * (f3 - 0.5);
 
             feature1.push(f1);
@@ -410,12 +445,12 @@ mod tests {
         assert_eq!(
             importances,
             vec![
-                0.07680860824384894,
-                0.22398368444798653,
-                0.19379724508736923,
-                0.07470334097342736,
-                0.060765985323840255,
-                0.3294309902816728
+                0.06743725813997076,
+                0.22594018609277702,
+                0.19671183110117801,
+                0.07562742199761226,
+                0.05954537473187141,
+                0.33055886109798627
             ]
         );
 

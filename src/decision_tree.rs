@@ -1,7 +1,7 @@
 use crate::functions;
 use crate::table::Table;
 use rand::Rng;
-use rand::seq::SliceRandom as _;
+use rand::seq::IndexedRandom as _;
 
 const MIN_SAMPLES_SPLIT: usize = 2;
 const MAX_DEPTH: usize = 64;
@@ -135,7 +135,7 @@ impl<R: Rng> NodeBuilder<R> {
         let mut best_split: Option<SplitPoint> = None;
         let mut best_informatin_gain = f64::MIN;
         let max_features = std::cmp::min(valid_columns.len(), self.max_features);
-        for &column in valid_columns.choose_multiple(&mut self.rng, max_features) {
+        for &column in valid_columns.sample(&mut self.rng, max_features) {
             table.sort_rows_by_column(column);
             for (row, threshold) in table.thresholds(column) {
                 let impurity_l = functions::mse(table.target().take(row));
@@ -175,11 +175,10 @@ impl<R: Rng> NodeBuilder<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand;
 
     #[test]
-    fn regression_works() -> Result<(), anyhow::Error> {
-        let columns = vec![
+    fn regression_works() -> Result<(), Box<dyn std::error::Error>> {
+        let columns = [
             // Features
             &[
                 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 1.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0,
@@ -200,8 +199,7 @@ mod tests {
         ];
         let train_len = columns[0].len() - 2;
         let table = Table::new(columns.iter().map(|c| &c[..train_len]).collect())?;
-        let regressor =
-            DecisionTreeRegressor::fit(&mut rand::thread_rng(), table, Default::default());
+        let regressor = DecisionTreeRegressor::fit(&mut rand::rng(), table, Default::default());
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
             46.0

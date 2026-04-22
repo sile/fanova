@@ -10,16 +10,5 @@ categories = ["science"]
 license = "MIT"
 
 [dependencies]
-itertools = "0.10"
-ordered-float = "3"
-rand = "0.8"
+rand = "0.10"
 rayon = "1"
-thiserror = "1"
-
-[dev-dependencies]
-anyhow = "1"
-criterion = "0.3"
-
-[[bench]]
-name = "quantify_importance"
-harness = false

@@ -3,7 +3,7 @@ use crate::decision_tree::{DecisionTreeOptions, DecisionTreeRegressor};
 use crate::functions;
 use crate::table::Table;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::num::NonZeroUsize;
 
@@ -58,9 +58,9 @@ impl Default for RandomForestOptions {
 
 impl RandomForestOptions {
     fn tree_rngs(&self) -> impl Iterator<Item = StdRng> {
-        let seed = self.seed.unwrap_or_else(|| rand::thread_rng().r#gen());
+        let seed = self.seed.unwrap_or_else(|| rand::rng().random());
         let mut rng = StdRng::seed_from_u64(seed);
-        (0..self.trees.get()).map(move |_| StdRng::seed_from_u64(rng.r#gen()))
+        (0..self.trees.get()).map(move |_| StdRng::seed_from_u64(rng.random()))
     }
 }
 
@@ -125,8 +125,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn regression_works() -> Result<(), anyhow::Error> {
-        let columns = vec![
+    fn regression_works() -> Result<(), Box<dyn std::error::Error>> {
+        let columns = [
             // Features.
             &[
                 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 1.0, 0.0, 0.0, 2.0, 0.0, 1.0, 1.0, 2.0,
@@ -149,16 +149,15 @@ mod tests {
 
         let table = Table::new(columns.iter().map(|f| &f[..train_len]).collect())?;
 
-        let mut options = RandomForestOptions::default();
-        options.seed = Some(0);
+        let options = RandomForestOptions::default().seed(0);
         let regressor = RandomForestRegressor::fit(table, options);
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len]).collect::<Vec<_>>()),
-            41.063500000000005
+            41.221166666666676
         );
         assert_eq!(
             regressor.predict(&columns.iter().map(|f| f[train_len + 1]).collect::<Vec<_>>()),
-            44.425000000000004
+            44.51380952380952
         );
 
         Ok(())
