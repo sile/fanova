@@ -1,5 +1,4 @@
 use crate::table::Table;
-use ordered_float::OrderedFloat;
 use std::ops::Range;
 
 #[derive(Debug, Clone)]
@@ -11,11 +10,11 @@ impl FeatureSpace {
             .map(|i| {
                 let start = table
                     .column(i)
-                    .min_by_key(|&v| OrderedFloat(v))
+                    .min_by(|a, b| a.total_cmp(b))
                     .expect("never fails");
                 let end = table
                     .column(i)
-                    .max_by_key(|&v| OrderedFloat(v))
+                    .max_by(|a, b| a.total_cmp(b))
                     .expect("never fails");
                 Range { start, end }
             })

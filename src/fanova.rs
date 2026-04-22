@@ -5,10 +5,33 @@ use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
 use crate::space::FeatureSpace;
 use crate::table::{Table, TableError};
 use itertools::Itertools as _;
-use ordered_float::OrderedFloat;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::ops::Range;
+
+#[derive(Debug, Clone, Copy)]
+struct TotalF64(f64);
+
+impl PartialEq for TotalF64 {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.total_cmp(&other.0).is_eq()
+    }
+}
+
+impl Eq for TotalF64 {}
+
+impl PartialOrd for TotalF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TotalF64 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
 
 /// fANOVA options.
 #[derive(Debug, Clone, Default)]
@@ -172,7 +195,7 @@ impl Fanova {
         let (feature, subspaces) = &feature_subspaces[0];
         let range = partition.space.ranges()[*feature].clone();
         let start = subspaces
-            .binary_search_by_key(&OrderedFloat(range.start), |x| OrderedFloat(x.start))
+            .binary_search_by(|x| x.start.total_cmp(&range.start))
             .unwrap_or_else(|index| index);
 
         for i in (start..subspaces.len()).take_while(|&i| subspaces[i].end <= range.end) {
@@ -295,23 +318,23 @@ fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> Vec<Range<f64>> {
     subspaces.into_values().collect()
 }
 
-fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut p: Range<f64>) {
+fn insert_subspace(subspaces: &mut BTreeMap<TotalF64, Range<f64>>, mut p: Range<f64>) {
     if (p.start - p.end).abs() < f64::EPSILON {
         return;
     }
 
     if let Some(mut q) = subspaces
-        .range(..=OrderedFloat(p.start))
+        .range(..=TotalF64(p.start))
         .next_back()
         .map(|(_, q)| q.clone())
     {
         if (q.start - p.start).abs() < f64::EPSILON {
             if q.end > p.end {
-                subspaces.remove(&OrderedFloat(q.start));
+                subspaces.remove(&TotalF64(q.start));
 
                 q.start = p.end;
-                subspaces.insert(OrderedFloat(p.start), p);
-                subspaces.insert(OrderedFloat(q.start), q);
+                subspaces.insert(TotalF64(p.start), p);
+                subspaces.insert(TotalF64(q.start), q);
             } else {
                 assert!(q.end <= p.end);
                 p.start = q.end;
@@ -320,19 +343,19 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
         } else {
             assert!(q.start < p.start);
             if q.end > p.end {
-                subspaces.remove(&OrderedFloat(q.start));
+                subspaces.remove(&TotalF64(q.start));
 
                 let r = Range {
                     start: p.end,
                     end: q.end,
                 };
                 q.end = p.start;
-                subspaces.insert(OrderedFloat(q.start), q);
-                subspaces.insert(OrderedFloat(p.start), p);
-                subspaces.insert(OrderedFloat(r.start), r);
+                subspaces.insert(TotalF64(q.start), q);
+                subspaces.insert(TotalF64(p.start), p);
+                subspaces.insert(TotalF64(r.start), r);
             } else {
                 assert!(q.end <= p.end);
-                subspaces.remove(&OrderedFloat(q.start));
+                subspaces.remove(&TotalF64(q.start));
 
                 let r = Range {
                     start: q.end,
@@ -340,13 +363,13 @@ fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut 
                 };
                 q.end = p.start;
                 p.end = r.start;
-                subspaces.insert(OrderedFloat(q.start), q);
-                subspaces.insert(OrderedFloat(p.start), p);
+                subspaces.insert(TotalF64(q.start), q);
+                subspaces.insert(TotalF64(p.start), p);
                 insert_subspace(subspaces, r);
             }
         }
     } else {
-        subspaces.insert(OrderedFloat(p.start), p);
+        subspaces.insert(TotalF64(p.start), p);
     }
 }
 

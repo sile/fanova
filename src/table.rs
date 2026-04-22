@@ -1,4 +1,3 @@
-use ordered_float::OrderedFloat;
 use rand::{Rng, RngExt};
 use std::ops::Range;
 
@@ -59,7 +58,7 @@ impl<'a> Table<'a> {
     pub fn sort_rows_by_column(&mut self, column: usize) {
         let columns = &self.columns;
         self.row_index[self.row_range.start..self.row_range.end]
-            .sort_by_key(|&x| OrderedFloat(columns[column][x]))
+            .sort_by(|&a, &b| columns[column][a].total_cmp(&columns[column][b]))
     }
 
     pub fn bootstrap_sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
