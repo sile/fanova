@@ -49,6 +49,7 @@
 pub use self::fanova::{Fanova, FanovaOptions, FitError, Importance};
 pub use self::random_forest::RandomForestOptions;
 
+mod combinations;
 mod decision_tree;
 mod fanova;
 mod functions;

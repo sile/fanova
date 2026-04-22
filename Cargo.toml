@@ -10,7 +10,6 @@ categories = ["science"]
 license = "MIT"
 
 [dependencies]
-itertools = "0.14"
 rand = "0.10"
 rayon = "1"
 

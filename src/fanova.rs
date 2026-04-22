@@ -1,10 +1,10 @@
+use crate::combinations::combinations;
 use crate::decision_tree::DecisionTreeRegressor;
 use crate::functions;
 use crate::partition::TreePartitions;
 use crate::random_forest::{RandomForestOptions, RandomForestRegressor};
 use crate::space::FeatureSpace;
 use crate::table::{Table, TableError};
-use itertools::Itertools as _;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -175,7 +175,7 @@ impl Fanova {
     #[cfg(test)]
     fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> + use<> {
         let features = self.feature_space.ranges().len();
-        (1..=k).flat_map(move |k| (0..features).combinations(k))
+        (1..=k).flat_map(move |k| combinations(0..features, k))
     }
 
     fn traverse_covered_subspaces<F>(
@@ -251,7 +251,7 @@ impl Fanova {
         let size = self.feature_space.partial_size(features);
         let mut importance = variance / size / tree.variance;
         for k in 1..features.len() {
-            for sub_features in features.iter().copied().combinations(k) {
+            for sub_features in combinations(features.iter().copied(), k) {
                 importance -= self.quantify_importance_tree(tree, &sub_features);
             }
         }
