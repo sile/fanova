@@ -99,6 +99,7 @@ struct Tree {
     partitions: TreePartitions,
     mean: f64,
     variance: f64,
+    feature_subspaces: Vec<Vec<Range<f64>>>,
     importances: BTreeMap<Vec<usize>, f64>,
 }
 
@@ -106,10 +107,19 @@ impl Tree {
     fn new(regressor: DecisionTreeRegressor, feature_space: FeatureSpace) -> Self {
         let partitions = TreePartitions::new(&regressor, feature_space);
         let (mean, variance) = partitions.mean_and_variance();
+        let n_features = partitions
+            .iter()
+            .next()
+            .map(|p| p.space.ranges().len())
+            .unwrap_or(0);
+        let feature_subspaces = (0..n_features)
+            .map(|i| subspaces(partitions.iter().map(|p| p.space.ranges()[i].clone())))
+            .collect();
         Self {
             partitions,
             mean,
             variance,
+            feature_subspaces,
             importances: BTreeMap::new(),
         }
     }
@@ -182,7 +192,7 @@ impl Fanova {
         &self,
         marginal_value_index: usize,
         partition: &crate::partition::Partition,
-        feature_subspaces: &[(usize, Vec<Range<f64>>)],
+        feature_subspaces: &[(usize, &Vec<Range<f64>>)],
         f: &mut F,
     ) where
         F: FnMut(usize),
@@ -216,11 +226,7 @@ impl Fanova {
         let feature_subspaces = features
             .iter()
             .copied()
-            .map(|i| {
-                let subspaces =
-                    subspaces(tree.partitions.iter().map(|p| p.space.ranges()[i].clone()));
-                (i, subspaces)
-            })
+            .map(|i| (i, &tree.feature_subspaces[i]))
             .collect::<Vec<_>>();
 
         let overall_marginal_size = self.feature_space.marginal_size(features);
