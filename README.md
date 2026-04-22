@@ -4,8 +4,7 @@ fanova
 [![fanova](https://img.shields.io/crates/v/fanova.svg)](https://crates.io/crates/fanova)
 [![Documentation](https://docs.rs/fanova/badge.svg)](https://docs.rs/fanova)
 [![Actions Status](https://github.com/sile/fanova/workflows/CI/badge.svg)](https://github.com/sile/fanova/actions)
-[![Coverage Status](https://coveralls.io/repos/github/sile/fanova/badge.svg?branch=master)](https://coveralls.io/github/sile/fanova?branch=master)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![License](https://img.shields.io/crates/l/fanova)
 
 A Rust [fANOVA] (functional analysis of variance) implementation.
 
@@ -25,9 +24,9 @@ let mut target = Vec::new();
 
 let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 for _ in 0..100 {
-    let f1 = rng.gen();
-    let f2 = rng.gen();
-    let f3 = rng.gen();
+    let f1 = rng.r#gen();
+    let f2 = rng.r#gen();
+    let f3 = rng.r#gen();
     let t = f1 + f2 * 2.0 + f3 * 3.0;
 
     feature1.push(f1);
