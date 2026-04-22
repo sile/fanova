@@ -151,7 +151,7 @@ impl Fanova {
     }
 
     #[cfg(test)]
-    fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> {
+    fn feature_combinations(&self, k: usize) -> impl Iterator<Item = Vec<usize>> + use<> {
         let features = self.feature_space.ranges().len();
         (1..=k).flat_map(move |k| (0..features).combinations(k))
     }
@@ -281,21 +281,20 @@ fn subspaces(partitions: impl Iterator<Item = Range<f64>>) -> Vec<Range<f64>> {
     for p in partitions {
         insert_subspace(&mut subspaces, p);
     }
-    subspaces.into_iter().map(|(_, v)| v).collect()
+    subspaces.into_values().collect()
 }
 
 fn insert_subspace(subspaces: &mut BTreeMap<OrderedFloat<f64>, Range<f64>>, mut p: Range<f64>) {
-    if (p.start - p.end).abs() < std::f64::EPSILON {
+    if (p.start - p.end).abs() < f64::EPSILON {
         return;
     }
 
     if let Some(mut q) = subspaces
         .range(..=OrderedFloat(p.start))
-        .rev()
-        .next()
+        .next_back()
         .map(|(_, q)| q.clone())
     {
-        if (q.start - p.start).abs() < std::f64::EPSILON {
+        if (q.start - p.start).abs() < f64::EPSILON {
             if q.end > p.end {
                 subspaces.remove(&OrderedFloat(q.start));
 
@@ -355,9 +354,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
-            let f1 = rng.gen();
-            let f2 = rng.gen();
-            let f3 = rng.gen();
+            let f1 = rng.r#gen();
+            let f2 = rng.r#gen();
+            let f3 = rng.r#gen();
             let t = f1 + f2 * 2.0 + f3 * 3.0;
 
             feature1.push(f1);
@@ -389,9 +388,9 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0);
         for _ in 0..100 {
-            let f1 = rng.gen();
-            let f2 = rng.gen();
-            let f3 = rng.gen();
+            let f1 = rng.r#gen();
+            let f2 = rng.r#gen();
+            let f3 = rng.r#gen();
             let t = f1 / 100.0 + (f2 - 0.5) * (f3 - 0.5);
 
             feature1.push(f1);

@@ -59,7 +59,7 @@ impl<'a> Table<'a> {
 
     pub fn sort_rows_by_column(&mut self, column: usize) {
         let columns = &self.columns;
-        (&mut self.row_index[self.row_range.start..self.row_range.end])
+        self.row_index[self.row_range.start..self.row_range.end]
             .sort_by_key(|&x| OrderedFloat(columns[column][x]))
     }
 

@@ -15,9 +15,9 @@
 //!
 //! let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 //! for _ in 0..100 {
-//!     let f1 = rng.gen();
-//!     let f2 = rng.gen();
-//!     let f3 = rng.gen();
+//!     let f1 = rng.r#gen();
+//!     let f2 = rng.r#gen();
+//!     let f3 = rng.r#gen();
 //!     let t = f1 + f2 * 2.0 + f3 * 3.0;
 //!
 //!     feature1.push(f1);

@@ -58,9 +58,9 @@ impl Default for RandomForestOptions {
 
 impl RandomForestOptions {
     fn tree_rngs(&self) -> impl Iterator<Item = StdRng> {
-        let seed = self.seed.unwrap_or_else(|| rand::thread_rng().gen());
+        let seed = self.seed.unwrap_or_else(|| rand::thread_rng().r#gen());
         let mut rng = StdRng::seed_from_u64(seed);
-        (0..self.trees.get()).map(move |_| StdRng::seed_from_u64(rng.gen()))
+        (0..self.trees.get()).map(move |_| StdRng::seed_from_u64(rng.r#gen()))
     }
 }
 
