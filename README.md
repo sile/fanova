@@ -4,8 +4,7 @@ fanova
 [![fanova](https://img.shields.io/crates/v/fanova.svg)](https://crates.io/crates/fanova)
 [![Documentation](https://docs.rs/fanova/badge.svg)](https://docs.rs/fanova)
 [![Actions Status](https://github.com/sile/fanova/workflows/CI/badge.svg)](https://github.com/sile/fanova/actions)
-[![Coverage Status](https://coveralls.io/repos/github/sile/fanova/badge.svg?branch=master)](https://coveralls.io/github/sile/fanova?branch=master)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![License](https://img.shields.io/crates/l/fanova)
 
 A Rust [fANOVA] (functional analysis of variance) implementation.
 
